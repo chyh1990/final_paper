@@ -1,0 +1,178 @@
+\documentclass{beamer}
+
+\usecolortheme[named=blue]{structure}
+
+\mode<presentation>
+{
+  \usetheme{Warsaw}
+  \setbeamercovered{transparent}
+  \setbeamertemplate{items}[ball]
+  \setbeamertemplate{theorems}[numbered]
+  \setbeamertemplate{footline}[frame number]
+}
+
+\usepackage{beamerthemesplit}
+\usepackage{hyperref}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip = 0pt plus 1pt
+\usepackage[cm-default]{fontspec}
+\usepackage{xunicode,xltxtra}
+\usepackage{indentfirst}
+\usepackage{xeCJK}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyvrb}
+\usepackage{tabularx}
+
+\setsansfont{Kai} 
+
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt minus 0.1pt
+
+
+\title
+{基于GIT的分布式实时编译及BUG分析系统}
+\subtitle{开题报告}
+  \author{计92 陈宇恒}
+\institute{清华大学计算机系}
+
+\begin{document}
+%-----------------------------------------------------------------------------80
+  \frame
+  {
+    \titlepage
+  }
+
+
+  \frame{
+	  \frametitle{系统功能}
+	  本系统针对Linux内核基于GIT的分布式开发模式，实现以下功能：
+	  \begin{itemize}
+		  \item 实时编译测试，在一天之内对出现问题的
+代码提交做出响应并通知对应开发者；
+		\item 
+对成功编译的版本，进行运行测试。对于Linux内核，此测试通过KVM运行编译出来的内核镜像，
+捕捉启动过程和若干测试程序导致的Kernel Panic，进行分析并通知开发者；
+		\item 在以上基础上，捕捉代码修改对软件性能的影响。
+	  \end{itemize}
+
+  }
+
+\section*{大纲}
+\frame{\tableofcontents }
+
+  \section{系统架构}
+  \frame{
+	  \frametitle{单集群系统内部组成}
+	本0Day测试系统可以部署在广域网的多个集群上，各个集群之间只共享少量信息。
+	单集群系统主要由一下部件组成：
+	\begin{itemize}
+		\item GIT镜像服务器
+		\item NFS服务器
+		\item KVM测试调度器
+	\end{itemize}
+
+	另外，集群中的每个节点又可以担任（或同时担任）一下角色：
+	\begin{itemize}
+	\item 编译服务器
+	\item KVM启动测试服务器
+	\item LKP性能测试服务器
+	\end{itemize}
+	}
+
+   \frame{
+	   \frametitle{多集群系统组成}
+	本系统具有自然的可扩展性，只需添加一个同步数据库即可推广到广域网上：
+	\begin{itemize}
+		\item 如上一小节所示的$n$个独立测试集群，之间通过广域网连接
+		\item 一个中心的Key-Value数据库，我们使用GIT设计了一个分布式的Key-Value
+			数据库以实现集群间数据同步的功能。
+	\end{itemize}
+	}
+
+\section{毕设工作重点}
+\begin{frame}[fragile]
+	  \frametitle{构建基于GIT的Key-Value同步数据库}
+	  不使用传统数据库的原因：避免数据库服务器的维护成本，
+	  使用Github等免费服务即可。
+	  基本算法：
+
+\scriptsize{
+\begin{Verbatim}[frame=single]
+  while
+    git pull --ff-only || {
+      #should not error, try reset
+      git reset --hard HEAD^
+      continue
+    }
+    test_set keys,values
+
+    git commit -a
+
+    #if push success, finish
+    git push && break
+
+    #push failed, remote centeral repo updated
+    git reset --hard HEAD^
+  done
+\end{Verbatim}
+}
+
+\end{frame}
+
+  \frame{
+	  \frametitle{Linux编译和运行时Bug分析}
+	  \begin{itemize}
+		  \item 静态分析部分 \\
+	  现在使用的静态检查工具有：Cppcheck/Sparse/Coccinelle。这部分工作
+	  主要在分析系统已发现的10000+个错误/警告上。
+	  	\item 运行是Bug分析 \\
+		这部分主要集中在Kernel运行过程中产生的Panic信息分析上。在0Day系统
+		运行过程中，已收集到3600多个Panic信息，我们将对这些信息进行分析
+		整理，归纳其背后的规律。
+	  \end{itemize}
+  }
+
+  \frame{
+	  \frametitle{系统应用范围扩展}
+	  一些推广思路：
+  	\begin{itemize}
+		\item 现在的系统重点针对内核，
+将来应该可以比较容易地测试其他使用GIT开发模式的开源目标软件，比较容易加入其他测试工具。
+		\item 实现一个通用模块，用来分析bug的一些共性信息，比如bug的life time，bug的特征（内存溢出，空指针，语义，并行...）
+
+
+	\end{itemize}
+  }
+
+\section{相关工作}
+\frame{
+\frametitle{Fast 2013 Best Paper}
+\emph{A Study of Linux File System Evolution}\\
+\vspace{1em}
+本文主要通过Linux开发过程中Git Commit中开发者给出的patch信息，分析
+Linux Kernel文件子系统的代码演化。通过分析8年来Linux文件系统相关的
+5079个patch，提出了一些新颖且令人惊讶的现象。这些对Patch分析的结果
+非常有利于以后的文件系统开发和相关Bug自动分析工具的开发。
+
+}
+
+\frame{
+	\frametitle{OSDI 2012}
+\emph{Be Conservative: Enhancing Failure Diagnosis with Proactive Logging}\\
+\vspace{1em}
+这一论文更偏重与运行时错误的分析。
+软件系统在实际运行中出错时，软件日志中的错误和警告信息经常是唯一可以用于分析定位
+底层错误的手段。因此，这些Log的有效性就具有很强的重要性。但是，很少有人研究现有
+日志信息的搜集方法和如何提高这些日志的有效性。本文针对五个广泛使用的大型开源软件做了
+研究。从250个随机采样的系统错误中，发现有大半错误无法通过现有的日志信息很好地诊断
+出来。但是另一方面，进一步分析显示，大多数这些错误可以分为几个常见的错误模式（例如
+系统调用返回错误）。
+}
+
+\end{document}
+
