@@ -128,8 +128,9 @@
 	  \frametitle{Linux编译和运行时Bug分析}
 	  \begin{itemize}
 		  \item 静态分析部分 \\
-	  现在使用的静态检查工具有：Cppcheck/Sparse/Coccinelle。这部分工作
-	  主要在分析系统已发现的10000+个错误/警告上。
+	  现在使用的静态检查工具有：Cppcheck/Sparse/Coccinelle/Smatch。这部分工作
+	  主要在分析系统已发现的10000+个错误/警告上。主要目标是减少这些分析工具产生
+	  的False Positive。
 	  	\item 运行是Bug分析 \\
 		这部分主要集中在Kernel运行过程中产生的Panic信息分析上。在0Day系统
 		运行过程中，已收集到3600多个Panic信息，我们将对这些信息进行分析
