@@ -122,16 +122,28 @@
 		
 		具体计划如下：
 		\begin{itemize}
-			\item 进一步理解AMD64/X86\_64系统架构
+			\item 进一步理解AMD64/X86\_64系统架构 (Week 1-4)
 			\item
 				完成NUMA架构的CPU，内存支持，以及完成APIC，IOAPIC等
-				体系结构特定代码
+				体系结构特定代码 (Week 5-6)
 			\item 完成可以在多核上工作的内存管理、调度器等模块
-			\item 在我们的OS上实现MIT PDOS实验室的最新
+				(Week 7-9)
+			\item 在我们的OS上实现MIT PDOS实验室的最新 
 				研究成果，设计基于每个core的物理内存，虚拟内存，调度管理
-				，RCU同步互斥机制等各个模块
+				，RCU同步互斥机制等各个模块(Week 10-14)
 		\end{itemize}
 	  	本毕业设计也与MIT PDOS实验室的最新工作紧密联系。
+
+	}
+
+	\frame{
+		\frametitle{前四周工作}
+		前四周以调研和对AMD64多核系统了解为主，完成了以下代码工作：
+		\begin{itemize}
+			\item ACPICA库移植
+			\item LAPIC初始化
+			\item CPU和NUMA节点信息读取
+		\end{itemize}
 
 	}
 
@@ -177,6 +189,7 @@
 		修改Linux内核和Glibc，实现了用户态多线程，在此基础上实现了一种新
 		的调度和Syscall方式。
 	}
+
 
 \end{document}
 

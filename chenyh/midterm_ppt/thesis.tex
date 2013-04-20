@@ -1,0 +1,345 @@
+\documentclass{beamer}
+
+\usecolortheme[named=blue]{structure}
+
+\mode<presentation>
+{
+  \usetheme{Warsaw}
+  \setbeamercovered{transparent}
+  \setbeamertemplate{items}[ball]
+  \setbeamertemplate{theorems}[numbered]
+  \setbeamertemplate{footline}[frame number]
+}
+
+\usepackage{beamerthemesplit}
+\usepackage{hyperref}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip = 0pt plus 1pt
+\usepackage[cm-default]{fontspec}
+\usepackage{xunicode,xltxtra}
+\usepackage{indentfirst}
+\usepackage{xeCJK}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyvrb}
+\usepackage{tabularx}
+
+\setsansfont{Kai} 
+
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt minus 0.1pt
+
+
+\title
+{多核可扩展操作系统内核的实现与研究}
+\subtitle{期中报告}
+  \author{计92 陈宇恒\\指导老师：陈渝}
+\institute{清华大学计算机系}
+
+\begin{document}
+%-----------------------------------------------------------------------------80
+  \frame
+  {
+    \titlepage
+  }
+
+\section*{大纲}
+\frame{\tableofcontents }
+
+\frame{
+	\frametitle{已有操作系统的问题}
+  当前基于AMD64/X86\_64架构的多核系统已经得到广泛应用。但随着40核甚至
+  80核的NUMA系统的出现，对已有操作系统的多核可扩展性提出了苛刻的要求。
+
+	\begin{itemize}
+		\item
+	由于已有操作系统多数是由单核系统演化而来，在设计之初就使用了一些
+	不具有多核扩展性的数据结构来维护VMA、DCACHE、MountTable等内核关键
+	数据结构。这导致Linux等操作系统在20核以上硬件系统上表现不佳，甚至
+	出现性能下降；
+		\item 一些同步原语没有为重核架构优化，例如Linux的Spinlock
+			实现在重核架构上导致代价高昂的Cache同步协议开销；
+		\item
+			操作系统设计上的问题。例如Linux中各个Core共享页表，
+			在一些应用下造成不必要的TLB shootdown。
+	\end{itemize}
+	鉴于这些问题，我们希望重新设计一个小型实验性操作系统和相应工具，
+	从根本上解决这些问题。
+
+}
+
+
+\frame{
+	\frametitle{期中工作成果}
+	经过几周的努力，已经完成了以下几项多核OS相关工作：
+	\begin{itemize}
+		\item OS
+			kernel方面：完成了uCore多核启动，在QEMU、KVM和真机上启动
+			成功，为后面工作奠定了基础；
+
+		\item
+			OS多核可扩展性理论研究方面：使用MIT的Spec符号执行引擎，
+			编写了虚拟内存的Posix Model。
+		\item 性能工具方面：修改QEMU，为其添加全系统profiler功能；
+	\end{itemize}
+
+}
+
+\section{支持NUMA的多核OS}
+\begin{frame}[fragile]
+	\frametitle{ACPI系统拓扑信息读取}
+	在主板出厂前，硬件厂商把硬件的拓扑结构信息写入ROM中的
+	ACPI表。OS通过读取此表，获得CPU个数，NUMA节点等信息。
+	使用开源实现ACPICA，并实现其操作系统相关接口层，即可实现LAPIC、IOAPIC、NUMA等信息。
+	\scriptsize{
+	\begin{verbatim}
+acpitables_init()
+ACPI: RSDP 0xfd7d0 00014 (v0 BOCHS )
+ACPI: RSDT 0x1fffd370 00038 (v1 BOCHS  BXPCRSDT 00000001 BXPC 00000001)
+ACPI: FACP 0x1fffff80 00074 (v1 BOCHS  BXPCFACP 00000001 BXPC 00000001)
+...
+ACPI: HPET 0x1fffd500 00038 (v1 BOCHS  BXPCHPET 00000001 BXPC 00000001)
+ACPI: SRAT 0x1fffd3b0 00150 (v1 BOCHS  BXPCSRAT 00000001 BXPC 00000001)
+xapic_init_once: xapic base 0xffff8000fee00000
+xapic_lapic_init: Using xapic LAPIC
+xapic: Initializing LAPIC (CPU 0)
+	\end{verbatim}
+}
+
+\end{frame}
+
+\begin{frame}[fragile]
+	\frametitle{per-CPU变量和支持NUMA的物理页分配算法}
+	\begin{itemize}
+		\item per-CPU变量，实现原理比较简单，在kernel
+			image中分配好Boot CPU的perCPU内存，其他CPU
+			（Application
+			Processor)动态分配。每个CPU使用GS寄存器存放各自perCPU变量指针。
+		\item
+			支持NUMA的物理页分配算法。由于NUMA架构上，
+			每个CPU应该尽量使用本地节点的内存页，这就需要对传统Buddy
+			System算法做修改，具体是对每个NUMA节点都建立各自的FreeList。
+	\end{itemize}
+	\scriptsize{
+	\begin{Verbatim}[frame=single]
+acpi: NUMA node 0 : cpus 0 2 4 6 
+  0x0 - 0x9ffff
+  0x100000 - 0xfffffff
+acpi: NUMA node 1 : cpus 1 3 5 7 
+  0x10000000 - 0x1fffffff
+	\end{Verbatim}
+}
+		
+\end{frame}
+
+\frame{
+	\frametitle{AP启动和简易调度}
+	\begin{itemize}
+		\item 系统上电后，只有Boot CPU开始工作，Boot
+	CPU负责在OS启动的最后阶段唤醒Application Processor
+	(AP)。这项工作根据Intel Multiprocessor规范，通过LAPIC发送
+	Startup中断实现。
+
+		\item Boot CPU把所有AP唤醒后，打开本地中断，开始正常运行。现在系统
+	中实现了一个简单的调度器，每个CPU从一个Ready Task队列中按照Round-Robin
+	顺序取出Task运行。
+	\end{itemize}
+}
+
+\frame{
+	\frametitle{真机测试环境}
+	为了测试系统性能，并且在真实环境下深入研究Cache Contention，
+	TLB shootdown等对多核OS性能的影响，我们的系统必须支持在
+	真实机器上运行。
+
+	我们使用的一台4核Core2机器作为测试机，通过PXE+Grub2网络启动
+	我们的OS kernel。Root Filesystem暂时使用Ramdisk，驻留在内存。
+}
+
+\section{OS多核可扩展性理论研究}
+\frame{
+	\frametitle{MIT对OS syscall多核可扩展性的研究}
+	MIT的最新一篇论文通过研究，认为Syscall的可交换性在一定程度上
+	等价于Syscall的多核可扩展性。
+
+	\begin{block}
+
+	具体论证是，当两个Syscall在一定条件下可交换，意味着他们没有数据
+	相关性，通过某种实现可以避免Cache Contention。达到Perfect
+	Scalability。
+
+	\end{block}
+
+	为了发现Syscall可交换条件，需要遍历Syscall实现中的所有条件
+	分支，这可以用符号执行技术实现。但是真实Syscall实现过于复杂，
+	我们可以通过归纳Posix标准中对某个Syscall语义的要求，用简化
+	的模型（Model）描述此语义要求。
+}
+
+\frame{
+	\frametitle{Posix接口虚拟内存相关syscall的建模}
+	这里只针对Anonymous Page经行建模（先不考虑File Backed MMAP）
+	通过对Posix标准的阅读，结合主流OS对虚拟内存的实现机制，
+	我们整理出OS虚拟内存的几个主要接口：
+	\begin{itemize}
+		\item mmap(addr, fixed, canwrite)
+		\item munmap(addr)
+		\item pagefault\_read(addr)
+		\item pagefault\_write(addr)
+	\end{itemize}
+
+}
+
+\begin{frame}[fragile]
+	\frametitle{MMAP系统调用建模例子}
+	\begin{columns}
+	\begin{column}{0.7\textwidth}
+	\tiny{
+		\begin{Verbatim}[frame=single]
+def mmap(self, addr, canwrite, fixed, internal_ret_addr):
+  self.add_addrvar(simsym.unwrap(addr).decl())
+  simsym.assume(internal_ret_addr>=0)
+  simsym.assume(internal_ret_addr<PG_NUM)
+  if fixed:
+    internal_ret_addr = addr
+  else:
+    simsym.assume(simsym.symand([internal_ret_addr>0,
+      internal_ret_addr<PG_NUM,
+      self.vma[internal_ret_addr] == 0]))
+  self.add_addrvar(simsym.unwrap(internal_ret_addr).decl())
+  # never return null
+  if internal_ret_addr <= 0 or internal_ret_addr > PG_NUM-1:
+    return ('err', -1)
+  if canwrite:
+    self.vma[internal_ret_addr] = 2
+  else:
+    self.vma[internal_ret_addr] = 1
+  return ('ok', internal_ret_addr)
+    \end{Verbatim}
+	}
+  	\end{column}
+
+  	\begin{column}{0.3\textwidth}
+		这类考虑了Posix标准中的一些标志位：
+		\begin{itemize}
+			\item MAP\_FIX
+			\item MAP\_ANON
+			\item PROT\_WRITE
+		\end{itemize}
+  	\end{column}
+	\end{columns}
+\end{frame}
+
+\section{基于QEMU和GPROF的全系统Profiler}
+\frame{
+	\frametitle{QEMU+GPROF基本原理}
+	这种方法结合了QEMU和GPROF的机制，实现了一个全系统的Profiler：
+	\begin{enumerate}
+		\item 编译内核时加入-pg参数，GCC会在所有
+			函数的prolog中插入一个mcount函数调用，
+			用于跟踪Call graph
+		\item 在内核中实现mcount函数，加入一条supervisor（QEMU）
+			Callback指令
+		\item 修改QEMU，对Callback进行响应，生成调用图。
+			并定时采样，做profile。
+	\end{enumerate}
+	代码放在https://github.com/chyh1990/qemu/tree/1.3-profiler
+}
+
+\begin{frame}[fragile]
+	\frametitle{具体实现}
+	\begin{columns}[T]
+	\begin{column}{0.5\textwidth}
+	QEMU的更改主要包含两部分：
+	\begin{itemize}
+		\item glibc中移植的Callgraph和统计代码
+		\item supervisor中的callback，现在的实现：
+	\tiny{
+		\begin{verbatim}
+/* target-i386/misc_helper.c */
+case __MSR_KPROFILER:
+    _kmcount_internal(EDI, ESI);
+    break;		
+	\end{verbatim}
+	}
+	\end{itemize}
+	\end{column}
+	\begin{column}{0.5\textwidth}
+OS 中的修改主要是增加mcount函数：
+\tiny{
+	\begin{Verbatim}[frame=single]
+.global mcount
+.type mcount, @function
+#define MAGIC_ECX 0xfeab0001
+mcount:
+        /* Allocate space for 7 registers.*/
+        subq    $56,%rsp
+        movq    %rax,(%rsp)
+        /* ... */
+
+        movq    56(%rsp),%rsi
+        /* Get frompc via the frame pointer.*/
+        movq    8(%rbp),%rdi
+        /* call the hypervisor */
+        mov     $MAGIC_ECX, %ecx
+        wrmsr
+
+        /* ... */
+        movq    (%rsp),%rax
+        addq    $56,%rsp
+
+        ret
+	\end{Verbatim}
+}
+	
+	\end{column}
+	\end{columns}
+
+\end{frame}
+
+\begin{frame}[fragile]
+	\frametitle{输出结果}
+	\tiny{
+	\begin{Verbatim}[frame=single]
+Flat profile:
+
+Each sample counts as 0.01 seconds.
+  %   cumulative   self              self     total           
+ time   seconds   seconds    calls  ms/call  ms/call  name    
+ 25.62      0.52     0.52     8654     0.06     0.06  ide_wait_ready
+  8.87      0.70     0.18      960     0.19     0.75  ide_read_secs
+  8.37      0.87     0.17                             do_halt
+  4.43      0.96     0.09     1195     0.08     0.08  memmove
+  4.19      1.05     0.09   135219     0.00     0.00  get_pte
+  2.96      1.11     0.06     7908     0.01     0.01  serial_putc_sub
+  2.71      1.16     0.06   135268     0.00     0.00  get_pmd
+  1.97      1.20     0.04   433010     0.00     0.00  ptep_present
+  1.97      1.24     0.04      673     0.06     0.06  memset
+	\end{Verbatim}
+	}
+
+	\tiny{
+	\begin{Verbatim}[frame=single]
+granularity: each sample hit covers 2 byte(s) for 0.49% of 2.03 seconds
+
+index % time    self  children    called     name
+                0.00    1.25    4377/4377        __alltraps [2]
+[1]     61.4    0.00    1.25    4377         trap [1]
+                0.00    1.24    4377/4377        trap_dispatch [3]
+                0.01    0.00   26695/26889       mycpu [157]
+                0.00    0.00    8746/8755        trap_in_kernel [365]
+                0.00    0.00    4362/4362        kern_enter [376]
+                0.00    0.00    4355/4362        kern_leave [377]
+                0.00    0.00    4278/4285        may_killed [379]
+                0.00    0.00      79/117         schedule [429]
+	\end{Verbatim}
+	}
+\end{frame}
+
+
+\end{document}
+
