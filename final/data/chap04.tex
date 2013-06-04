@@ -1,10 +1,14 @@
 
-\chapter{多核操作系统和性能测试工具的实现}
+\chapter{多核操作系统和相关性能测试工具的实现}
+在上一章多核操作系统可扩展性理论的基础上，本章将介绍在清华uCore实验操作系统的基础上加入对最新NUMA的多核处理器的支持，并用数种多核可扩展的数据结构和算法改造其内核数据结构。
 
 \section{AMD64多核NUMA架构硬件抽象层的实现}
+本毕设在实验操作系统内核uCore的硬件抽象层基础上，加上了相对完整的x86\_64 NUMA多核架构支持。本内核已经在QEMU软件模拟器、KVM硬件虚拟化平台和Intel真实机器上测试通过。
+\subsection{uCore硬件抽象层概述}
+
 \subsection{ACPI支持}
 
-\subsection{硬件中断和IPI中断支持}
+\subsection{多核中断和IPI中断支持}
 
 \section{多核操作系统基础设施实现}
 \subsection{锁的实现}
@@ -12,7 +16,6 @@
 \subsection{支持NUMA的物理页分配器}
 
 \subsection{per-CPU变量实现}
-
 
 \section{可扩展引用技术器的实现}
 
