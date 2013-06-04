@@ -33,6 +33,9 @@ logic 和类似KLEE[5]的解决方法。
 ===========
 【TODO 进一步描述commutativty，cache，数据共享的关系】
 【Posix interface model 和 实际系统的关系】
+【例子：Filesystem， VM】
+
+linux mm/mmap.c:1353
 
 近年来，随着SMT求解器，如STP、MathSAT、Z3的进步，为符号执行和模型验证方法提供了越来越强大的后端支持，使对操作系统等一类高复杂度软件的形式化验证成为了可能。事实上，在OSDI近年的会议上，已有多项针对OS中文件系统子系统的建模工作[[5,6]，但他们的主要着眼点在使用模型验证和符号执行手段分析现有文件系统的Bug和错误上。在文件系统方面，MIT的Commuter[2]的一个创新点是把符号执行与可交换性法相结合，提出了在Posix文件系统API规范中发掘多核可扩展机会的方法。但他们的工作存在如下不足：
 
@@ -58,10 +61,18 @@ Memory)子系统为例，介绍简化的Posix系统调用API接口和中断处�
 在OS的虚拟内存管理子系统中，有两个最重要的系统调用：mmap和munmap。与文件系统建模不同的是，为了相对完整地描述虚拟内存子系统的行为，模型中还必须包括VM子系统对缺页异常（pagefault
 handler）的处理例程。[XXX 如何扩展论述？]
 
+对于内存管理子系统，我们把操作系统对程序的接口分成两类：1)OS提供给用户态程序的系统调用接口，如mmap/mumap系列函数；和2)用户程序访问硬件页表发生缺页中断时，操作系统根据虚拟地址区域的元数据（如Linux中的VMA结构体）填写缺失的硬件页表项。对于由软件填充TLB的体系结构，如MIPS，也可以通过软件模拟页表的方法实现类似功能。
+
+在编写操作系统的过程中，我们发现上述两类操作系统接口可以统一建模。由于在x86_64（或其他大部分体系结构中）缺页异常属于同步异常[10]，可以把读写缺页看做普通系统调用，通过添加如下两个虚拟系统调用对缺页进行建模：
+
+void mem_write(pid, addr, value)
+word mem_read(pid, addr)
+
 系统调用
 -----------
 
-虚拟内存子系统中主要的用户态接口为mmap和munmap。
+虚拟内存子系统中主要的用户态接口为mmap和munmap。以下以匿名页（Anonymous
+Page）映射为例，介绍VM子系统的建模方法。
 
 【此处用我写的vm.py，我认为对anon page的处理跟MIT他们是等价的，问题不大】
 
@@ -75,8 +86,25 @@ handler）的处理例程。[XXX 如何扩展论述？]
 基本算法
 -----------
 
-### 例子（reference counter？）
+在对关注的系统调用和中断建模之后，通过符号执行技术，可以求解N个系统调用之间的可交换性条件。对于N=2的情况具体算法如下：
 
+设A(xi)和B(yi)为两个待求可交换性的模型函数，xi, yi为参数列表，返回值为a，b
+系统初始状态为sigma0，写为Hoare逻辑的形式：
+
+{sigma0} a = A(xi) {sigma1 a} b = B(yi) {sigma2 a b}
+
+调换A和B的执行顺序
+
+{sigma0} a' = A(xi) {sigma1 a'} b' = B(yi) {sigma2' a' b'}
+
+通过符号执行技术和适当的判定过程，求解使得下面断言满足的条件：
+
+sigma2 = sigma2' and a = a' and b = b'
+
+及其对应的sigma0,a,b 即可得到系统调用A和B之间的可交换条件。'
+这意味着在实现这对系统调用或中断的过程中，针对符合上式的特殊情况可以做优化，使得在这种情况下A、B的执行不会发生任何数据竞争现象，因而多核系统上可达到完美的可扩展性。
+
+### 例子（reference counter？）
 
 操作系统模型中求解的难点及解决思路
 -----------
@@ -105,7 +133,8 @@ SMT求解器中实现：
 ### KLEE
 KLEE是基于LLVM
 bytecode的符号执行引擎。KLEE已经被广泛地应用在文件系统建模，大型开源软件（如GNU
-coreutils）漏洞查找[5]等方面。KLEE中使用了一种简单的方法来避开指针和Heap对象约束求解的困难：
+coreutils）漏洞查找[5]等方面。KLEE中使用了一种简单的方法来避开指针和Heap对象约束求解的困难：记录指针可能引用的对象集合，在指针被dereference的时候，如果此指针可能指向N个对象，则fork出N个状态并进入调度队列，之后再继续进行符号执行。状态之间，KLEE使用写时复制（Copy-on-Write）的方式管理内存。有研究这对这种方法做扩展[11]，使
+
 
 
 
@@ -125,3 +154,5 @@ Reference
 7. Separation Logic: A Logic for Shared Mutable Data Structures
 8. Symbolic Execution with Separation Logic
 9. Separation Logic Modulo Theories
+10. Intel Manual
+11. Parallel Symbolic Execution for Automated Real-World Software Testing
