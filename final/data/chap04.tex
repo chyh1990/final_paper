@@ -66,9 +66,6 @@ trap & 硬件中断、CPU核间中断处理 \\
 
 
 % Define block styles used later
-
-\tikzstyle{sensor}=[draw, fill=blue!20, text width=2em, 
-    text centered, minimum height=2.5em,drop shadow]
 \tikzstyle{ann} = [above, text width=5em, text centered]
 \tikzstyle{wa} = [sensor, text width=4em, fill=red!20, 
     minimum height=3em, rounded corners, drop shadow]
@@ -230,6 +227,66 @@ AMD64多核系统启动与单核系统的主要区别在于应用处理器的启
 
 与用户态编程中的线程本地存储（Thread Local Storage）类似，多核操作系统内核运行过程中，对每个CPU，需要分配其私有存储空间来存储各个CPU独有的状态信息，例如本CPU上真正执行的线程控制块指针current。在多核系统中使用percpu变量的一个好处是可以避免多CPU读写同一个内存地址，造成Cache一致性协议开销，提高系统的可扩展性。
 在uCore中，CPU0占用percpu变量空间在内核镜像中静态分配，保证内核在启动时可以尽早使用BSP的percpu变量存储空间。AP的percpu变量空间在启动过程中由BSP动态地在其所在NUMA节点上分配，保证AP访问percpu变量的高效性。
+
+本毕设percpu变量实现设计如图\ref{fig:percpu-impl}所示。
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[->,>=stealth']
+\tikzstyle{mem}=[draw, fill=green!20, text width=5em, 
+    text centered, minimum height=2.5em,drop shadow]
+\tikzstyle{LabelStyle}=[right]
+
+\path   node (cpu0) [sensor]  {$P_0$};
+\path  (cpu0.east)+(2,0) node (cpu1) [sensor]  {$P_1$};
+\path  (cpu1.east)+(2,0) node (cpu2)  {$\dots$};
+\path  (cpu2.east)+(2,0) node (cpun) [sensor]  {$P_n$};
+
+\path (cpu0.center)+(0,-2) node (p0) [mem, fill=yellow!20] {$CPU_0 vars$};
+\path (cpu1.center)+(0,-2) node (p1) [mem] {$CPU_1 vars$};
+\path (cpu2.center)+(0,-2) node (pdot)  {$\dots$};
+\path (cpun.center)+(0.,-2) node (pn) [mem] {$CPU_n vars$};
+
+\path (cpu0) edge   node {$GS$} (p0);
+\path (cpu1) edge   node {$GS$} (p1);
+\path (cpun) edge   node {$GS$} (pn);
+
+\path (p1.south)+(0,-1) node (ptr) [mem, text width=8em, fill=yellow!20] {$percpu\_offsets[]$};
+
+\path (ptr) edge   node {} (p0);
+\path (ptr) edge   node  {} (p1);
+\path (ptr) edge   node  {} (pn);
+
+\end{tikzpicture}
+
+\caption[percpu变量的实现]{percpu变量的实现}
+\label{fig:percpu-impl}
+\end{figure}
+
+ 图\ref{fig:percpu-impl}中黄色部分内存在内核镜像上静态分配，绿色部分内存在各自的NUMA节点上动态分配。下面以一个percpu变量$ticks$为例，说明
+uCore中percpu变量的工作原理：
+\begin{enumerate}
+\item 
+在适当的初始化后，各CPU可以通过GS段寄存器访问自己的cpu结构体：
+\begin{lstlisting}
+static inline struct cpu* mycpu(void){
+	uint64_t val;                                  
+	asm volatile("movq %%gs:0, %0" : "=r" (val));
+	return (struct cpu *)val;                                               
+} 
+\end{lstlisting}
+
+\item
+从cpu结构体中id成员变量可以获得本CPU的ID号，用此ID作为索引，在percpu\_offsets数组中获取本CPU percpu变量内存区域基地址的指针。
+
+\item 由于链接器已经计算好了CPU0上$ticks_0$的地址$Addr(ticks_0)$，通过下式计算$CPU_k$上ticks的地址：
+\begin{equation}
+\label{eq:percpu}
+ticks_k = percpu\_offsets[k] + ( Addr(ticks_0) - percpu\_offsets[0] )
+\end{equation}
+
+\end{enumerate}
+
 
 \subsection{可扩展引用计数器的实现}
 \label{subsec:refcache}
