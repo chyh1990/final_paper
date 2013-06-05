@@ -36,27 +36,26 @@ up_write(&mm->mmap_sem);
 
 \begin{lstlisting}
 static void *  thread_mmap(void *arg){                                                                                               
-        int id = (int)arg;                                                                      
-        int c = 0, i;                                                                         
-        for(i=0;i<COUNT;i++){                                                                   
-                int l = 4096 * (rand() % 5 + 1); 
-                void *t = mmap(NULL, l, PROT_WRITE|PROT_READ, 
-                      MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-                assert(t != MAP_FAILED);                                                        
-                c++;                                                                            
-        } 
-        counter[id] = c;                                                                        
-        return NULL;                                                                            
+	int id = (int)arg;                                                                      
+	int c = 0, i;                                                                         
+	for(i=0;i<COUNT;i++){                                                                   
+		int l = 4096 * (rand() % 5 + 1); 
+		void *t = mmap(NULL, l, PROT_WRITE|PROT_READ, 
+			MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+		assert(t != MAP_FAILED);                                                        
+		c++;                                                                            
+	} 
+	counter[id] = c;                                                                        
+	return NULL;                                                                            
 }                                                                                               
                                                                                                 
 int main(int argc, const char* argv[]) {                                                                                               
-        /* ... */
-        for(i=0;i<threads;i++)
-                pthread_create(th+i, NULL, thread_mmap, (void*)i);                              
-                                                                                                
-        for(i=0;i<threads;i++)                                                                  
-                pthread_join(th[i], (void**)&res); 
-        /* ... */
+	/* ... */
+	for(i=0;i<threads;i++)
+		pthread_create(th+i, NULL, thread_mmap, (void*)i);                                                                                
+	for(i=0;i<threads;i++)                                                                  
+		pthread_join(th[i], (void**)&res); 
+	/* ... */
 }                                                                                                                          
 \end{lstlisting}
 
@@ -64,7 +63,7 @@ int main(int argc, const char* argv[]) {
 
 \begin{figure}[ht]
 \begin{center}
-\includegraphics[width=0.7\textwidth]{figures/mmap_test.pdf}
+\includegraphics[width=0.8\textwidth]{figures/mmap_test.pdf}
 \end{center}
 \caption{多核系统mmap饱和测试}
 \label{fig:mmap_test}
@@ -74,7 +73,7 @@ int main(int argc, const char* argv[]) {
 
 从上面的案例分析中我们可以知道，现有操作系统内核的部分子系统在多核硬件上表现不如人意。但是，在做出具体可扩展性优化之前，有必要充分论证这种优化的存在性。例如，根据Posix系统调用规范，open系统调用必须返回当前进程中最小的未被使用的文件描述符。如果严格遵循这种规范，open接口规范本身就无法做到并行可扩展，因为实现者必须串行化这些调用来获得最小的文件描述符。另一方面，对于mmap等调用，Posix标准并没有对匿名页返回地址做任何要求（用户指定除外），事实上，造成VM操作在Linux、FreeBSD上可扩展性问题的原因是他们使用了红黑树或伸展树来管理虚拟内存映射\cite{radixvm:eurosys13}，这类数据结构需要一个大锁来保护其内部状态（如红黑树的内部节点）的一致性，即使VM操作涉及的是两个不相关的叶子节点。
 
-为了解答这个问题，受到编译器优化技术的启发，有研究者提出了一种在系统接口（如Posix规范）中发现可扩展潜能的方法\cite{commuter:2013}。他们称之为``可交换性法则"：只要两个操作的顺序可以交换，那么就可以用多核可扩展的方式实现这些操作。其中的原理是，如果两个操作可以交换（不影响操作结果，因此调用者无法分辨它们执行的顺序），那么他们就可以用不造成读-写冲突的方式实现。
+为了解答可扩展性优化存在性问题，受到编译器优化技术的启发，有研究者提出了一种在系统接口（如Posix规范）中发现可扩展潜能的方法\cite{commuter:2013}。他们称之为``可交换性法则"：只要两个操作的顺序可以交换，那么就可以用多核可扩展的方式实现这些操作。其中的原理是，如果两个操作可以交换（不影响操作结果，因此调用者无法分辨它们执行的顺序），那么他们就可以用不造成读-写冲突的方式实现。
 
 根据这条规则，可以认为Syscall的可交换性在一定程度上等价于Syscall的多核可扩展性。
 直观理解，当两个Syscall在一定条件下可交换，意味着他们没有数据相关性，通过某种实现可以避免多核CPU对二三级高速缓存的竞争（Cache
@@ -134,7 +133,7 @@ void counter_sub(struct state *counter)
 近年来，随着SMT求解器，如STP、MathSAT、Z3的进步，为符号执行和模型验证方法提供了越来越强大的后端支持，使对操作系统等一类高复杂度软件的形式化验证成为了可能。事实上，在OSDI近年的会议上，已有多项针对OS中文件系统子系统的建模工作\cite{radixvm:eurosys13}\cite{Yang:2006:UMC:1189256.1189259}，但他们的主要着眼点在使用模型验证和符号执行手段分析现有文件系统的Bug和错误上。
 在文件系统方面，MIT的Commuter\cite{commuter:2013}的一个创新点是把符号执行与可交换性法相结合，提出了在Posix文件系统API规范中发掘多核可扩展机会的方法。
 
-我们希望把Commuter的思路进一步扩展到OS的其他子系统，通过为操作系统虚拟内存管理、进程管理子系统进行建模，提供一种可以跨OS子系统分析操作系统接口多核可交换性/可扩展性的方法。
+本毕设希望把Commuter的思路进一步扩展到OS的其他子系统，通过为操作系统虚拟内存管理、进程管理子系统进行建模，提供一种可以跨OS子系统分析操作系统接口多核可交换性/可扩展性的方法。
 
 首先，我们认为对虚拟内存子系统系统调用建模发现潜在的可扩展性因素越来越有必要。正如文章\cite{radixvm:eurosys13}所说，在多核系统上OS的VM子系统对于VM密集型应用（如Java垃圾回收器）上已经成为了瓶颈，大大限制了多线程编程模型的多核可扩展性。通过建模发现Posix
 VM API中可扩展性的潜能，以此为基础提出更好的Posix系统调用实现方式。
@@ -178,6 +177,8 @@ coreutils）漏洞查找\cite{Cadar:2008:KUA:1855741.1855756}等方面。KLEE中
 
 
 \subsection{进一步讨论}
+
+实验中发现，KLEE并不能完全解决共享内存对象推导的问题。
 Separation Logic是对Hoare
 Logic的一种扩展，理论上可以用于对使用共享可变数据结构（如Heap上分配的对象）的命令式程序做推导[7]。考虑如下程序：
 

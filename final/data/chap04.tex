@@ -2,21 +2,250 @@
 \chapter{多核操作系统和相关性能测试工具的实现}
 在上一章多核操作系统可扩展性理论的基础上，本章将介绍在清华uCore实验操作系统的基础上加入对最新NUMA的多核处理器的支持，并用数种多核可扩展的数据结构和算法改造其内核数据结构。
 
-\section{AMD64多核NUMA架构硬件抽象层的实现}
+\section{uCore多核硬件抽象层}
+
+\subsection{概述}
+uCore作为一个实验操作系统内核，包含了现代操作系统中各个主要组成部分。与Linux等主流开源操作系统类似，uCore把内核代码分为硬件无关代码（如进程管理、调度器）和硬件相关代码（包括一级硬件中断处理，硬件初始化等）。这两部分代码之间由硬件抽象层（HAL）连接，此代码层保证了uCore可以在多种硬件平台上方便地移植。事实上，现在uCore实验操作系统已经可以在i386、ARM、MIPS等平台上正常工作。但一直以来，此内核都未加入对SMP或NUMA平台的完善支持。本毕设的一项重要内容是在uCore中加入了较为健全的NUMA抽象层，并在实现了对AMD64多核硬件平台的支持。而对SMP多核系统，可以看做是NUMA架构中NUMA节点数为1的特例，在本毕设的多核硬件抽象中可以得到自然的统一的支持。
+
+为了使uCore可以支持多核硬件平台，本毕设对硬件无关代码也加入了相关扩展。加入NUMA支持后的内核硬件无关层代码结构如表\ref{tab:ucore-common}所示。
+通过把与硬件无关的多核支持相关代码与硬件特定代码分离，可以大大减少未来其他加入其他多核硬件架构（如多核ARM平台）支持的工作量。
+
+\begin{table}[ht]
+  \centering
+  \caption{uCore硬件无关部分代码结构}
+  \label{tab:ucore-common}
+    \begin{tabular*}{\linewidth}{lp{10cm}}
+      \toprule[1.5pt]
+      {\heiti 目录} & {\heiti 描述} \\\midrule[1pt]
+arch & 硬件相关代码，见下表 \\
+fs      & 虚拟文件系统（VFS）和SFS、FAT、YAFFS文件系统支持\\
+kmodule       &  内核可加载模块支持 \\ 
+libs             & 工具函数，简化的C环境 \\
+mm             & 虚拟内存管理子系统\\
+module       & Linux Device Environment \\
+numa           & NUMA多核架构HAL支持 \\
+process        & 进程管理子系统 \\
+schedule      & 调度算法，包含Round-Robin和多级返回队列算法 \\
+sync              &  进程间通讯子系统 \\
+syscall         & 类Unix系统调用实现 \\
+sysconf        &   硬件配置信息抽象 \\
+      \bottomrule[1.5pt]
+    \end{tabular*}
+\end{table}
+
+另一方面，对于特定的硬件平台，需要大量硬件相关代码支持操作系统的正常运作。如对于多核AMD64架构，需要高级配置和电源管理接口（ACPI）和高级可编程中断控制器（APIC）等复杂硬件驱动来完成系统拓扑结构读取、应用处理器（Application Processor）启动以及CPU核间通讯等任务。这部分代码被封装在arch/amd64目录下，此目录的结构
+如表\ref{tab:ucore-amd64}所示。
+
+\begin{table}[ht]
+  \centering
+  \caption{uCore硬件相关部分（AMD64）主要代码结构}
+  \label{tab:ucore-amd64}
+    \begin{tabular*}{\linewidth}{lp{8cm}}
+      \toprule[1.5pt]
+      {\heiti 目录} & {\heiti 描述} \\\midrule[1pt]
+debug  &  硬件相关调试工具\\
+driver &    硬件驱动，本毕设实现了ACPI、IOAPIC、LAPIC等多核OS必须的驱动 \\
+init  & 内核初始化代码，包括Boot CPU和AP进入长模式的启动代码\\
+libs  &  AMD64上自旋锁、GDT等硬件相关函数\\
+mm &   支持NUMA系统的物理页管理系统\\
+numa & AP初始化和核间通讯模块\\
+trap & 硬件中断、CPU核间中断处理 \\
+      \bottomrule[1.5pt]
+    \end{tabular*}
+\end{table}
+
+\subsection{主要数据结构}
+
+从图\ref{fig:numa-node}可以看出NUMA结构的复杂性：对于每个CPU来说，内存空间分为本地内存和远程内存，CPU访问远程内存的请求必须经过相关硬件进行中转。
+换言之，与传统SMP结构不同，CPU访问不同物理内存地址所需时间可能不相同。因此，操作系统的物理内存管理系统必须认识都NUMA系统的这种特性，才能
+为各个CPU高效地分配内存。另外，NUMA系统的这种特性也增大了线程迁移（migration）的开销，对调度器提出了新要求。
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}
+
+
+% Define block styles used later
+
+\tikzstyle{sensor}=[draw, fill=blue!20, text width=2em, 
+    text centered, minimum height=2.5em,drop shadow]
+\tikzstyle{ann} = [above, text width=5em, text centered]
+\tikzstyle{wa} = [sensor, text width=4em, fill=red!20, 
+    minimum height=3em, rounded corners, drop shadow]
+\tikzstyle{sc} = [sensor, text width=13em, fill=red!20, 
+    minimum height=10em, rounded corners, drop shadow]
+\def\blockdist{2.3}
+\def\edgedist{2.5}
+
+    \node (wa) [wa]  {Router};
+    \path (wa.west)+(-4.2,1.5) node (asr1) [sensor] {$P_0$};
+    \path (asr1.east)+(0.6,0) node (asr2)[sensor] {$P_1$};
+    \path (asr2.east)+(0.6,0) node (asr3)[sensor] {$\dots$}; 
+    \path (asr3.east)+(0.6,0) node (asr4)[sensor] {$P_n$};   
+    \path (asr1.south)+(1.8, -1) node (mem0) [sensor, text width=6em] {$Ram_0$};
+   
+    \path (mem0.south) +(0,-0.5) node (node0) {$NUMA-Node_0$};
+
+    \begin{pgfonlayer}{background}
+        \path (asr1.west |- asr1.north)+(-0.5,0.3) node (a) {};
+        \path (wa.south -| wa.east)+(+0.5,-0.3) node (b) {};
+        \path (asr4.east |- node0.south)+(+0.5,-0.5) node (c) {};
+          
+        \path[fill=yellow!20,rounded corners, draw=black!50, dashed]
+            (a) rectangle (c);           
+        \path (asr1.north west)+(-0.2,0.2) node (a) {};
+            
+    \end{pgfonlayer}
+
+    \path (wa.east)+(0.7,1.5) node (asr5) [sensor] {$P_{n+1}$};
+    \path (asr5.east)+(0.6,0) node (asr6)[sensor] {$P_{n+2}$};
+    \path (asr6.east)+(0.6,0) node (asr7)[sensor] {$\dots$}; 
+    \path (asr7.east)+(0.6,0) node (asr8)[sensor] {$P_{m}$};   
+    \path (asr5.south)+(1.8, -1) node (mem1) [sensor, text width=6em] {$Ram_1$};
+   
+    \path (mem1.south) +(0,-0.5) node (node1) {$NUMA-Node_1$};
+
+    \begin{pgfonlayer}{background}
+        \path (asr5.west |- asr5.north)+(-0.5,0.3) node (a) {};
+        \path (wa.south -| wa.east)+(+0.5,-0.3) node (b) {};
+        \path (asr8.east |- node1.south)+(+0.5,-0.5) node (c) {};
+          
+        \path[fill=yellow!20,rounded corners, draw=black!50, dashed]
+            (a) rectangle (c);           
+        \path (asr1.north west)+(-0.2,0.2) node (a) {};
+            
+    \end{pgfonlayer}
+
+
+\end{tikzpicture}
+\caption{HAL层NUMA拓扑结构表示}
+\label{fig:numa-node}
+\end{figure}
+
+正如上面所述，NUMA平台与传统SMP架构的最大区别是CPU、内存和中断分发的复杂拓扑结构。其中CPU和物理内存间的关联性是本质区别，如图\ref{fig:numa-node}。
+为了表示这种拓扑结构，本毕设在内核中维护一系列数据结构，保证内核代码可以在$O(1)$时间内响应关于系统拓扑结构的各种查询。
+
+uCore中NUMA拓扑结构相关关键数据结构如下：
+\begin{itemize}
+\item \emph{struct sysconf\_s}  \pozhehao 记录了系统NUMA节点数、CPU数等统计信息；
+\item \emph{struct numa\_node} \pozhehao NUMA节点对象，记录了特定NUMA节点的硬件ID、包含的CPU、内存地址分为，
+	相当于图\ref{fig:numa-node}中的NUMA-Node；
+\item \emph{struct cpu} \pozhehao 多核系统中最关键的数据结构之一，对每个物理CPU，都有一个对于的cpu对象。除了保存本CPU所述NUMA节点
+等拓扑信息之外，还保存了本CPU的状态，如per-CPU变量的基地址、CPU内核栈基地址等信息；
+\item \emph{struct numa\_mem\_zone} \pozhehao NUMA内存节点对象，主要保存一个指向物理页元数据链表的头指针。物理内存分配器通过这个
+对象找到适当的内存节点分配内存。
+\end{itemize}
+
+本节详细叙述了uCore操作系统内核的多核硬件抽象层支持，为硬件平台特定代码的实现构建好框架。下一节将介绍在此框架上加入对AMD64 NUMA架构硬件的具体支持。
+
+
+\section{AMD64多核NUMA架构硬件支持的实现}
 本毕设在实验操作系统内核uCore的硬件抽象层基础上，加上了相对完整的x86\_64 NUMA多核架构支持。本内核已经在QEMU软件模拟器、KVM硬件虚拟化平台和Intel真实机器上测试通过。
-\subsection{uCore硬件抽象层概述}
 
 \subsection{ACPI支持}
+为了支持多核CPU和NUMA结构，操作系统在启动的前期必须通过某种方式读取系统的拓扑结构信息，这些信息包括但不限于：
+\begin{itemize}
+\item CPU和LAPIC的关联信息
+\item LAPIC和IOAPIC的连接信息
+\item 物理内存和NUMA节点的关联信息
+\item PCI、PCIe子系统信息
+\end{itemize}
+
+对于AMD64多核架构（如图\ref{fig:mp-arch}所示），这些拓扑信息由主板上的ACPI模块管理。在主板出厂前，硬件厂商把硬件的部分拓扑结构信息写入Firmware中的
+	ACPI表。OS通过读取此表，NUMA节点等信息。上电自检后，BIOS把系统拓扑信息记录到ACPI表，并把它映射到预先定义好的内存地址上，操作系统通过读取这些信息表，即可获得当前系统的配置信息。现时uCore中用到的ACPI信息表如表\ref{tab:acpi}所示，各表项的具体结构见文献\cite{acpica}。这些表为uCore操作系统提供了NUMA节点和CPU、内存关联性等必要信息。
+
+\begin{figure}[ht]
+\begin{center}
+\includegraphics[width=0.7\textwidth]{figures/mp_arch.png}
+\end{center}
+\caption{多处理器系统架构图\cite{intelmp}}
+\label{fig:mp-arch}
+\end{figure}
+
+\begin{table}[ht]
+  \centering
+  \caption{ACPI主要硬件信息表}
+  \label{tab:acpi}
+    \begin{tabular*}{\linewidth}{lp{8cm}}
+      \toprule[1.5pt]
+      {\heiti 表名} & {\heiti 描述} \\\midrule[1pt]
+RSDT & Root System Description Table \\
+MADT  & Multipile ACPI Description Table \\
+SLIT    &  System Locality Distance Information Table\\
+SSDT    & Secondary System Description Table\\
+SRAT    & System Resource Affinity Table \\
+      \bottomrule[1.5pt]
+    \end{tabular*}
+\end{table}
+
+
+由于ACPI子系统及其信息表的复杂性，Intel公司及其他厂商发布了名为ACPI Component Architecture的开源框架，给出了与ACPI硬件规范对应的软件驱动实现。
+此框架被设计为易于整合到操作系统内核的独立子系统，操作系统（如Linux和uCore）只需实现ACPICA框架中定义好的OS服务层，提供内存管理、内核线程调度
+等基本接口函数，即可直接使用ACPICA框架操作ACPI兼容的硬件平台。现时，本毕设已经把ACPICA整合到uCore的编译系统中，实现了必要的OS服务层接口，
+可以直接使用ACPICA的API操作硬件。
 
 \subsection{多核中断和IPI中断支持}
+AMD64多核系统的分布式中断系统如图\ref{fig:mp-arch}所示，外部硬件中断先传递到IOAPIC上，操作系统可以通过对IOAPIC的编程，实现硬件中断的路由。在uCore现时
+的实现中，采用了与Linux默认配置相似的处理方法，即把绝大多数外部硬件中断路由到CPU0上，由$CPU_0$统一处理。值得注意的是，在APIC体系结构中，时钟中断不再
+由外部硬件触发，而是由集成在各个CPU核中的LAPIC中。因此，每个CPU都相应各自产生的时钟中断，各个中断之间不保证同步。换言之，在Refcache（见\ref{subsec:refcache}）等需要时钟同步的分布式算法中，需要软件实现时钟同步。
+
+TODO
+
+\subsection{AP启动}
+AMD64多核系统启动与单核系统的主要区别在于应用处理器的启动。AMD64多核系统中，上电后只有一个CPU开始正常运行，这个CPU被称为Bootstrap CPU（BSP），其他CPU处于halt状态，这些CPU被称为Application Processor（AP）\cite{intelmp}。多核操作系统启动主要分为两个阶段：
+
+	\begin{enumerate}
+		\item 系统上电后，只有Boot CPU开始工作，Boot
+	CPU负责在OS启动的最后阶段唤醒Application Processor
+	(AP)。这项工作根据Intel Multiprocessor规范，通过LAPIC发送
+	Startup中断实现。
+
+		\item Boot CPU把所有AP唤醒后，打开本地中断，开始正常运行。内核
+	调度器开始工作，每个CPU从各自的工作队列中按照某种顺序取出Task运行。
+	\end{enumerate}
+
+
+如上所述，Boot CPU在内核各个子系统初始化完成之后，由Boot CPU发送IPI中断到各个应用处理器，使之开始工作。应用处理器对应的LAPIC在收到IPI中断后，重置对应的CPU使之进入实模式状态。AP启动流程与BSP启动流程大致相同：
+
+\begin{enumerate}
+\item AP从实模式进入32bit保护模式，再进入64bit长模式（Longmode）
+\item 初始化本地GDT
+\item 初始化GS、FS段寄存器（见\ref{subsec:percpu})
+\item 加载启动页表
+\item 本地IDT和中断控制器初始化
+\item 本地Idle内核线程初始化
+\item 开启本地中断，开始调度
+\end{enumerate}
+
+所有AP打开中断进入正常主循环后，系统启动完成。
 
 \section{多核操作系统基础设施实现}
-\subsection{锁的实现}
+
+\subsection{无锁数据结构的实现}
 
 \subsection{支持NUMA的物理页分配器}
 
 \subsection{per-CPU变量实现}
+\label{subsec:percpu}
 
-\section{可扩展引用技术器的实现}
+与用户态编程中的线程本地存储（Thread Local Storage）类似，多核操作系统内核运行过程中，对每个CPU，需要分配其私有存储空间来存储各个CPU独有的状态信息，例如本CPU上真正执行的线程控制块指针current。在多核系统中使用percpu变量的一个好处是可以避免多CPU读写同一个内存地址，造成Cache一致性协议开销，提高系统的可扩展性。
+在uCore中，CPU0占用percpu变量空间在内核镜像中静态分配，保证内核在启动时可以尽早使用BSP的percpu变量存储空间。AP的percpu变量空间在启动过程中由BSP动态地在其所在NUMA节点上分配，保证AP访问percpu变量的高效性。
+
+\subsection{可扩展引用计数器的实现}
+\label{subsec:refcache}
 
 \section{基于QEMU的全系统性能采集工具}
+为了在模拟器中方便地寻找操作系统内核的瓶颈，本毕设这种方法结合了Qemu和Gprof的两个开源软件，实现了一个全系统的Profiler。
+
+TODO
+
+	\begin{enumerate}
+		\item 编译内核时加入-pg参数，GCC会在所有
+			函数的prolog中插入一个mcount函数调用，
+			用于跟踪Call graph
+		\item 在内核中实现mcount函数，加入一条supervisor（QEMU）
+			Callback指令
+		\item 修改QEMU，对Callback进行响应，生成调用图。
+			并定时采样，做profile。
+	\end{enumerate}
+

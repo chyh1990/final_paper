@@ -1,0 +1,5 @@
+gnuplot> set xlabel "cores"
+gnuplot> set ylabel "mmap throughput"
+gnuplot> plot  "mmap.data" u 1:($3/$2) w linespoints
+gnuplot> plot  "mmap.data" u 1:($3/$2) title "Linux 3.2.0" w linespoints 
+
