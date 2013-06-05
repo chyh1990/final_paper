@@ -41,7 +41,7 @@ static void *  thread_mmap(void *arg){
 	for(i=0;i<COUNT;i++){                                                                   
 		int l = 4096 * (rand() % 5 + 1); 
 		void *t = mmap(NULL, l, PROT_WRITE|PROT_READ, 
-			MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+			MAP_PRIVATE|MAP_ANON, -1, 0);
 		assert(t != MAP_FAILED);                                                        
 		c++;                                                                            
 	} 
@@ -69,7 +69,7 @@ int main(int argc, const char* argv[]) {
 \label{fig:mmap_test}
 \end{figure}
 
-\section{可交换性原理}
+\section{可交换性原理介绍}
 
 从上面的案例分析中我们可以知道，现有操作系统内核的部分子系统在多核硬件上表现不如人意。但是，在做出具体可扩展性优化之前，有必要充分论证这种优化的存在性。例如，根据Posix系统调用规范，open系统调用必须返回当前进程中最小的未被使用的文件描述符。如果严格遵循这种规范，open接口规范本身就无法做到并行可扩展，因为实现者必须串行化这些调用来获得最小的文件描述符。另一方面，对于mmap等调用，Posix标准并没有对匿名页返回地址做任何要求（用户指定除外），事实上，造成VM操作在Linux、FreeBSD上可扩展性问题的原因是他们使用了红黑树或伸展树来管理虚拟内存映射\cite{radixvm:eurosys13}，这类数据结构需要一个大锁来保护其内部状态（如红黑树的内部节点）的一致性，即使VM操作涉及的是两个不相关的叶子节点。
 
@@ -104,7 +104,7 @@ struct inode {
 正如本章开头所述，使用原子操作不利于操作系统的多核扩展。直观分析，若引用计数的值足够大，随便调换原子加减操作的次序并不会改变程序的运行结果，因此使用某种引用计数器计数，可以在多核上达到较好的可扩展性。
 下面我们将对这种简单的引用计数器建模，使用符号执行技术发现其扩展性潜能，说明这种方法的可行性。
 
-我们把引用计数器上的操作（API）抽象为个函数：
+首先，我们把引用计数器上的操作（API）抽象为个函数：
 \begin{enumerate}
 \item counter\_add
 \item counter\_dec
@@ -126,6 +126,12 @@ void counter_sub(struct state *counter)
                 counter->free = 1;     
 } 
 \end{lstlisting}
+
+第二步，根据后面\label{subsec:comm-alg}所示算法，符号化系统状态和接口调用参数：
+
+\begin{lstlisting}
+\end{lstlisting}
+
 
 
 \section{虚拟内存管理子系统的建模}
@@ -169,11 +175,12 @@ word mem_read(pid, addr)
 \section{基于模型的可交换性求解}
 
 \subsection{基本算法}
+\label{subsec:comm-alg}
 
 \subsection{使用KLEE求解模型}
 KLEE是基于LLVM
 bytecode的符号执行引擎。KLEE已经被广泛地应用在文件系统建模，大型开源软件（如GNU
-coreutils）漏洞查找\cite{Cadar:2008:KUA:1855741.1855756}等方面。KLEE中使用了一种简单的方法来避开指针和Heap对象约束求解的困难：记录指针可能引用的对象集合，在指针被dereference的时候，如果此指针可能指向N个对象，则fork出N个状态并进入调度队列，之后再继续进行符号执行。状态之间，KLEE使用写时复制（Copy-on-Write）的方式管理内存。有研究者对这种方法做扩展。
+coreutils）漏洞查找\cite{Cadar:2008:KUA:1855741.1855756}等方面。KLEE中使用了一种简单的方法来避开指针和Heap对象约束求解的困难：记录指针可能引用的对象集合，在指针被dereference的时候，如果此指针可能指向N个对象，则fork出N个状态并进入调度队列，之后再继续进行符号执行。状态之间，KLEE使用写时复制（Copy-on-Write）的方式压缩状态存储空间。
 
 
 \subsection{进一步讨论}
@@ -197,4 +204,6 @@ SMT求解器中实现：
 
 
 \section{小结}
-XXX TODO
+本章对文章\ref{commuter:2013}中提出的Commuter做扩展，实现了简化的Posix虚拟内存管理子系统模型。另一方面，提出了使用KLEE符号执行器求解系统调用可交换约束的方法。
+最后讨论了现有符号执行器在操作系统模型求解上的不足，提出结合Separation
+Logic和符号执行技术解决操作系统中共享数据结构求解的可能方案。

@@ -272,7 +272,7 @@ uCore中percpu变量的工作原理：
 static inline struct cpu* mycpu(void){
 	uint64_t val;                                  
 	asm volatile("movq %%gs:0, %0" : "=r" (val));
-	return (struct cpu *)val;                                               
+	return (struct cpu *)val; 
 } 
 \end{lstlisting}
 
@@ -293,6 +293,33 @@ ticks_k = percpu\_offsets[k] + ( Addr(ticks_0) - percpu\_offsets[0] )
 
 \section{基于QEMU的全系统性能采集工具}
 为了在模拟器中方便地寻找操作系统内核的瓶颈，本毕设这种方法结合了Qemu和Gprof的两个开源软件，实现了一个全系统的Profiler。
+
+由于真实操作系统工作环境的复杂性，很难通过分析源代码等静态分析方法发现内核中的性能问题。
+本全系统性能测试工具通过动态分析的方法，在内核运行过程中允许程序员方便地对操作系统内核的各个函数进行跟踪和计时。通过这些信息，可以较为容易地发现内核的运行的关键路径
+（也正是内核代码的瓶颈所在），并发现潜在的性能问题。
+
+为了使用本测试系统，必须使用修改过的Qemu软件模拟器运行内核：
+\begin{enumerate}
+	\item 首先，在编译内核时加上-pg参数；
+	\item
+		使用修改过的Qemu，使用下面的命令行参数运行uCore或其他操作系统内核：
+		\begin{lstlisting}[language=bash]
+qemu-system-x86_64 -no-kvm -m 512 -hda \
+obj/kernel.img -profileelf kernel-amd64.elf
+		\end{lstlisting}
+
+		并在操作系统中运行微测试应用程序；
+	\item
+		内核运行结束，Qemu退出后将生成kgmon.out文件，可以使用标准的gprof工具解析：
+		\begin{lstlisting}[language=bash]
+			gprof obj/kernel/kernel-amd64.elf kgmon.out 
+		\end{lstlisting}
+
+\end{enumerate}
+
+真实应用上的测试结果见\ref{cha:test}。
+
+\subsection{Profiler原理}
 
 TODO
 
