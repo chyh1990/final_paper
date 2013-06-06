@@ -27,36 +27,36 @@ mmap和munmap两个系统调用是Linux虚拟内存子系统中使用最频繁�
 /* Linux 3.9.2 mm/utils.c */
 down_write(&mm->mmap_sem);
 ret = do_mmap_pgoff(file, addr, len, prot, flag, pgoff,
-		&populate);                        
-up_write(&mm->mmap_sem);                               
+		&populate);
+up_write(&mm->mmap_sem);
 \end{lstlisting}
 
 如上面代码所示，Linux中对同一进程的mmap调用都加上了锁，实际上串行化了所有虚拟内存分配操作，这可能成为频繁调用这两个系统调用分配和释放内存的
 多线程应用的瓶颈。事实上，现在Linux中对两个系统调用的实现完全不具有多核可扩展性。事实上，我们可以使用一个简单的程序来验证Linux中mmap系统调用的可扩展性问题：
 
 \begin{lstlisting}
-static void *  thread_mmap(void *arg){                                                                                               
-	int id = (int)arg;                                                                      
-	int c = 0, i;                                                                         
-	for(i=0;i<COUNT;i++){                                                                   
-		int l = 4096 * (rand() % 5 + 1); 
-		void *t = mmap(NULL, l, PROT_WRITE|PROT_READ, 
+static void *  thread_mmap(void *arg){
+	int id = (int)arg;
+	int c = 0, i;
+	for(i=0;i<COUNT;i++){
+		int l = 4096 * (rand() % 5 + 1);
+		void *t = mmap(NULL, l, PROT_WRITE|PROT_READ,
 			MAP_PRIVATE|MAP_ANON, -1, 0);
-		assert(t != MAP_FAILED);                                                        
-		c++;                                                                            
-	} 
-	counter[id] = c;                                                                        
-	return NULL;                                                                            
-}                                                                                               
-                                                                                                
-int main(int argc, const char* argv[]) {                                                                                               
+		assert(t != MAP_FAILED);
+		c++;
+	}
+	counter[id] = c;
+	return NULL;
+}
+
+int main(int argc, const char* argv[]) {
 	/* ... */
 	for(i=0;i<threads;i++)
-		pthread_create(th+i, NULL, thread_mmap, (void*)i);                                                                                
-	for(i=0;i<threads;i++)                                                                  
-		pthread_join(th[i], (void**)&res); 
+		pthread_create(th+i, NULL, thread_mmap, (void*)i);
+	for(i=0;i<threads;i++)
+		pthread_join(th[i], (void**)&res);
 	/* ... */
-}                                                                                                                          
+}
 \end{lstlisting}
 
 在上面的程序中，用mmap系统调用多次向操作系统申请空闲的虚拟地址空间。由于同一进程的多个线程共享同一个地址空间（即同一VMA结构体），这在多核系统上将造成mm->mmap\_sem锁的饱和竞争情况，测试结果如图\ref{fig:mmap_test}所示。应该注意的是，我们调用mmap时使用了MAP\_PRIVATE和MAP\_ANONYMOUS标志，并且不指定addr参数申请固定的虚拟内存地址，操作系统应该有最大的自由度选择适当的虚拟内存区域避免VMA操作的竞争。但从测试结果可以看出，当CPU核数增多时，每秒执行的mmap次数反而降低。这符合Linux代码中VMA结构上由于内核中锁竞争造成应用程序严重性能瓶颈的预期。但是，下面我们将通过对Posix系统调用接口中mmap/munmap和缺页中断的建模，并通过符号执行技术证明Linux中对非重叠区域上VMA全局进程锁是不必要的。
@@ -94,10 +94,10 @@ checking）和符号执行的方法，求解Posix标准中系统调用的可交�
 
 \begin{lstlisting}
 /* linux 3.9.2 include/linux/fs.h */
-struct inode {                            
-    /* ... */
-    u64                     i_version;   
-    atomic_t                i_count;     
+struct inode {
+	/* ... */
+	u64                     i_version;
+	atomic_t                i_count;
 };
 \end{lstlisting}
 
@@ -115,28 +115,62 @@ struct inode {
 
 \begin{lstlisting}
 void counter_add(struct state *counter)
-{                                      
-        counter->c ++;                 
-}                                      
+{
+        counter->c ++;
+}
 void counter_sub(struct state *counter)
-{                                      
-        if(counter->c>0)               
-                counter->c --;         
-        if(counter->c == 0)            
-                counter->free = 1;     
-} 
+{
+        if(counter->c>0)
+                counter->c --;
+        if(counter->c == 0)
+                counter->free = 1;
+}
 \end{lstlisting}
 
 第二步，根据后面\label{subsec:comm-alg}所示算法，符号化系统状态和接口调用参数：
 
 \begin{lstlisting}
+	struct state c1, c2, c3;
+	klee_make_symbolic(&c1, sizeof(c1), "c1");
+	klee_assume(c1.c >= 1);
+	klee_assume(c1.free = 0);
+	
+	c2 = c1;
+	counter_add(&c2);
+	counter_sub(&c2);
+	
+	c3 = c1;
+	counter_sub(&c3);
+	counter_add(&c3);
+	
+	/* ERROR if not commutable */
+	klee_assert(c2.c == c3.c);
+	klee_assert(c2.free == c3.free);
 \end{lstlisting}
 
+第三步、使用KLEE对上述模型作符号执行，求得counter\_add和counter\_sub的可交换条件，KLEE的一个输入如下所示：
 
+	\begin{lstlisting}[caption=KLEE输出样例]
+ktest file : 'klee-last/test000001.ktest'
+args       : ['./counter.o']
+num objects: 1
+object    0: name: 'c1'
+object    0: size: 8
+object    0: data: '\xff\xff\xff\x7f\x00\x00\x00\x00'
+	\end{lstlisting}
+
+在上述这个例子中，KLEE输出了两种违反可交换性的系统初始状态：
+\begin{itemize}
+	\item ${c0.c == 1}$，先减后加对象被释放，先加后减没有变化
+	\item ${c0.c ==
+		0x7FFFFFFF}$，先加一后整数溢出，对象被错误释放，先减一没有问题
+\end{itemize}
+
+如上例所示，一般情况下counter\_add和counter\_sub是两个可交换的接口，但如果使用硬件原子操作指令实现，这些调用必须串行化，导致系统的可扩展性问题。本毕设将在\ref{subsec:refcache}介绍一种可扩展的引用计数算法在uCore中的实现。
 
 \section{虚拟内存管理子系统的建模}
 
-近年来，随着SMT求解器，如STP、MathSAT、Z3的进步，为符号执行和模型验证方法提供了越来越强大的后端支持，使对操作系统等一类高复杂度软件的形式化验证成为了可能。事实上，在OSDI近年的会议上，已有多项针对OS中文件系统子系统的建模工作\cite{radixvm:eurosys13}\cite{Yang:2006:UMC:1189256.1189259}，但他们的主要着眼点在使用模型验证和符号执行手段分析现有文件系统的Bug和错误上。
+近年来，随着SMT求解器，如STP、MathSAT、Z3\cite{DeMoura:2008:ZES:1792734.1792766}的进步，为符号执行和模型验证方法提供了越来越强大的后端支持，使对操作系统等一类高复杂度软件的形式化验证成为了可能。事实上，在OSDI近年的会议上，已有多项针对OS中文件系统子系统的建模工作\cite{radixvm:eurosys13}\cite{Yang:2006:UMC:1189256.1189259}，但他们的主要着眼点在使用模型验证和符号执行手段分析现有文件系统的Bug和错误上。
 在文件系统方面，MIT的Commuter\cite{commuter:2013}的一个创新点是把符号执行与可交换性法相结合，提出了在Posix文件系统API规范中发掘多核可扩展机会的方法。
 
 本毕设希望把Commuter的思路进一步扩展到OS的其他子系统，通过为操作系统虚拟内存管理、进程管理子系统进行建模，提供一种可以跨OS子系统分析操作系统接口多核可交换性/可扩展性的方法。
@@ -161,21 +195,76 @@ handler）的处理例程。[XXX 如何扩展论述？]
 \item 用户程序访问硬件页表发生缺页中断时，操作系统根据虚拟地址区域的元数据（如Linux中的VMA结构体）填写缺失的硬件页表项。对于由软件填充TLB的体系结构，如MIPS，也可以通过软件模拟页表的方法实现类似功能。
 \end{enumerate}
 
-在编写操作系统的过程中，我们发现上述两类操作系统接口可以统一建模。由于在x86\_64（或其他大部分体系结构中）缺页异常属于同步异常\cite{intelsys}，可以把读写缺页看做普通系统调用，通过添加如下两个虚拟系统调用对缺页进行建模：
+在编写操作系统的过程中，我们发现上述两类操作系统接口可以统一建模。例如，由于在x86\_64（或其他大部分体系结构中）缺页异常属于同步异常\cite{intelsys}，可以把读写缺页看做普通系统调用，通过添加如下两个虚拟系统调用对缺页进行建模。
+
+\subsection{系统调用建模}
+
+\subsection{中断建模}
 
 \begin{verbatim}
 void mem_write(pid, addr, value)
 word mem_read(pid, addr)
 \end{verbatim}
 
-\subsection{系统调用建模}
-
-\subsection{中断建模}
-
 \section{基于模型的可交换性求解}
 
 \subsection{基本算法}
 \label{subsec:comm-alg}
+Commuter\cite{commuter:2013}提出了一种对``可交换性原理''的构造性证明。根据这个证明，通过符号执行技术，可以求解$N$个系统调用之间的可交换性条件。本节给出$N=2$的情况具体算法，$N
+> 2$的情况可以类似推导。
+
+设$F_0(\boldsymbol{x}_0)$和$F_1(\boldsymbol{x}_1)$为两个待求可交换性的模型函数，$\boldsymbol{x}_i$为参数列表，返回值为$f_i$。
+系统初始状态为$\sigma_0$，写为Hoare Logic\cite{Hoare:ABC:363235.363259}的形式：
+
+\begin{equation}
+\label{eq:hoare1}
+\begin{aligned}
+\{ \sigma_0 \} \; f_0 &= F_0(\boldsymbol{x}_0) \; \{\sigma_1 \land f_0 \} \\
+\{ \sigma_1 \land f_0 \} \; f_1 &= F_1(\boldsymbol{x}_1) \; \{\sigma_2 \land f_0 \land
+	f_1 \}
+\end{aligned}
+\end{equation}
+
+根据Hoare Logic的composition规则，令$\sigma_f = \{\sigma_2 \land f_0 \land
+	f_1 \}$，由上式可得：
+
+\begin{equation}
+\label{eq:hoare2}
+\frac
+{ \{ \sigma_0 \} \; f_0 = F_0(\boldsymbol{x}_0) \; \{\sigma_1 \land f_0 \}\ , \
+\{ \sigma_1 \land f_0 \} \; f_1 = F_1(\boldsymbol{x}_1) \; \{ \sigma_f \} }
+{\{ \sigma_0 \}\ f_0 = F_0(\boldsymbol{x}_0);f_1 = F_1(\boldsymbol{x}_1) \ \{ \sigma_f
+\}}
+\end{equation}
+
+调换A和B的执行顺序得：
+\begin{equation}
+\label{eq:hoare3}
+\frac
+{ \{ \sigma_0 \} \; f_1' = F_1(\boldsymbol{x}_1) \; \{\sigma_1' \land f_1' \}\ , \
+\{ \sigma_1' \land f_1' \} \; f_0' = F_0(\boldsymbol{x}_0) \; \{ \sigma_f' \} }
+{\{ \sigma_0 \}\ f_1' = F_1(\boldsymbol{x}_1);f_0' = F_0(\boldsymbol{x}_0) \
+\{ \sigma_f' \}}
+\end{equation}
+
+通过符号执行技术和适当的判定过程，求解使得下面断言满足的条件$\{\sigma_0,\boldsymbol{x}_0,
+\boldsymbol{x}_1\}$：
+
+\begin{equation}
+\label{eq:hoare4}
+\sigma_f = \sigma_f'
+\end{equation}
+
+直观上看，此条件表示，无论系统调用的执行顺序如何，系统调用的返回值和系统终态是一致的。
+需要注意的是，传统Hoare
+Logic不支持Heap上变量的推导（即系统状态$\sigma$不包括系统的Heap空间），对操作系统接口模型
+的复杂性造成了限制。
+
+如果上述算法求出的的$\{\sigma_0,\boldsymbol{x}_0,
+\boldsymbol{x}_1\}$非空，即对于这些情况，可以在这些条件下交换$F_0$和$F_1$的顺序。
+这意味着在实现这对系统调用或中断的过程中，针对符合上式的特殊情况可以做优化，使得在这种情况下的$F_0$和$F_1$执行不会发生任何数据竞争现象，因而在多核系统上存在一种可扩展性实现。
+
+
 
 \subsection{使用KLEE求解模型}
 KLEE是基于LLVM
@@ -187,21 +276,20 @@ coreutils）漏洞查找\cite{Cadar:2008:KUA:1855741.1855756}等方面。KLEE中
 
 实验中发现，KLEE并不能完全解决共享内存对象推导的问题。
 Separation Logic是对Hoare
-Logic的一种扩展，理论上可以用于对使用共享可变数据结构（如Heap上分配的对象）的命令式程序做推导[7]。考虑如下程序：
-
-【XXX 多数sep logic论文使用reverse list。我们应该用OS中单向链表使用的例子】
-
+Logic的一种扩展，理论上可以用于对使用共享可变数据结构（如Heap上分配的对象）的命令式程序做推导\cite{Reynolds:2002:SLL:645683.664578}。
 形式上Separation Logic定义了Separating Conjuction运算符：P *
 Q，表示程序的堆（Heap）可分割为两个独立的堆H1、H2，在H1上命题P成立，在H2上命题Q成立。直观上，通过Seperating
-conjuction运算符和相关推理规则，简化了Heap上包含共享数据结构程序约束的描述。然而，文章[7]中并未给出Separation
+conjuction运算符和相关推理规则，简化了Heap上包含共享数据结构程序约束的描述。然而，文章\cite{Reynolds:2002:SLL:645683.664578}中并未给出Separation
 logic的判定过程(decision
 procedure)，Z3等SMT求解器未支持此类逻辑的可满足性判定。但是，对于separation
-logic的一些特殊情况，学界已经提出了相关的判定过程。例如，对于操作系统中的使用最频繁的链表结构，文章[9]提出了求解下面形式约束的算法，并在Z3
-SMT求解器中实现：
+logic的一些特殊情况，学界已经提出了相关的判定过程。例如，对于操作系统中的使用最频繁的链表结构，文章\cite{seplogic:theorem}提出了求解以下蕴含式的算法：
 
-[公式 XXX -> xxxxx]
-其中XXX是xxx
+\begin{equation}
+	\Pi \land \Sigma \to \Pi' \land \Sigma'
+\end{equation}
 
+其中，$\Pi$和$\Pi'$表示普通SMT求解器可以求解的逻辑约束，$\Sigma$和$\Sigma'$为包含Separation
+Conjuction的合取式。使用此算法，可以在Z3等求解器之上建立Heap变量、链表求解支持，实现复杂操作系统接口模型的推导。
 
 \section{小结}
 本章对文章\ref{commuter:2013}中提出的Commuter做扩展，实现了简化的Posix虚拟内存管理子系统模型。另一方面，提出了使用KLEE符号执行器求解系统调用可交换约束的方法。

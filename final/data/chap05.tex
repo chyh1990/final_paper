@@ -1,3 +1,25 @@
 
 \chapter{系统测试与分析}
 \label{cha:test}
+
+\section{GProf测试}
+为了使用本测试系统，必须使用修改过的Qemu软件模拟器运行内核：
+\begin{enumerate}
+	\item 首先，在编译内核时加上-pg参数；
+	\item
+		使用修改过的Qemu，使用下面的命令行参数运行uCore或其他操作系统内核：
+		\begin{lstlisting}[language=bash]
+qemu-system-x86_64 -no-kvm -m 512 -hda \
+obj/kernel.img -profileelf kernel-amd64.elf
+		\end{lstlisting}
+
+		并在操作系统中运行微测试应用程序；
+	\item
+		内核运行结束，Qemu退出后将生成kgmon.out文件，可以使用标准的gprof工具解析：
+		\begin{lstlisting}[language=bash]
+			gprof obj/kernel/kernel-amd64.elf kgmon.out 
+		\end{lstlisting}
+
+\end{enumerate}
+
+
