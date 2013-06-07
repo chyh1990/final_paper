@@ -1,6 +1,6 @@
 
 \chapter{多核操作系统和性能测试工具的实现}
-在上一章多核操作系统可扩展性理论的基础上，本章将介绍在清华uCore实验操作系统的基础上加入对最新NUMA的多核处理器的支持，并用数种多核可扩展的数据结构和算法改造其内核数据结构。
+在上一章多核操作系统可扩展性理论的基础上，本章将介绍在清华uCore实验操作系统的基础上加入对最新NUMA的多核处理器的支持，并用数种多核可扩展的数据结构和算法改造其内核数据结构。本章还介绍了本毕设设计了新型性能测试工具QProf的原理。
 
 \section{uCore多核硬件抽象层}
 
@@ -128,7 +128,7 @@ uCore中NUMA拓扑结构相关关键数据结构如下：
 \item \emph{struct numa\_node} \pozhehao NUMA节点对象，记录了特定NUMA节点的硬件ID、包含的CPU、内存地址分为，
 	相当于图\ref{fig:numa-node}中的NUMA-Node；
 \item \emph{struct cpu} \pozhehao 多核系统中最关键的数据结构之一，对每个物理CPU，都有一个对于的cpu对象。除了保存本CPU所述NUMA节点
-等拓扑信息之外，还保存了本CPU的状态，如per-CPU变量的基地址、CPU内核栈基地址等信息；
+等拓扑信息之外，还保存了本CPU的状态，如percpu变量的基地址、CPU内核栈基地址等信息；
 \item \emph{struct numa\_mem\_zone} \pozhehao NUMA内存节点对象，主要保存一个指向物理页元数据链表的头指针。物理内存分配器通过这个
 对象找到适当的内存节点分配内存。
 \end{itemize}
@@ -137,7 +137,8 @@ uCore中NUMA拓扑结构相关关键数据结构如下：
 
 
 \section{AMD64多核NUMA架构硬件支持的实现}
-本毕设在实验操作系统内核uCore的硬件抽象层基础上，加上了相对完整的x86\_64 NUMA多核架构支持。本内核已经在QEMU软件模拟器、KVM硬件虚拟化平台和Intel真实机器上测试通过。
+本毕设在实验操作系统内核uCore的硬件抽象层基础上，加上了相对完整的x86\_64
+NUMA多核架构支持。本内核已经在QEMU软件模拟器、KVM硬件虚拟化平台和支持ACPI的Intel真实机器上测试通过。
 
 \subsection{ACPI支持}
 为了支持多核CPU和NUMA结构，操作系统在启动的前期必须通过某种方式读取系统的拓扑结构信息，这些信息包括但不限于：
@@ -186,7 +187,34 @@ AMD64多核系统的分布式中断系统如图\ref{fig:mp-arch}所示，外部�
 的实现中，采用了与Linux默认配置相似的处理方法，即把绝大多数外部硬件中断路由到CPU0上，由$CPU_0$统一处理。值得注意的是，在APIC体系结构中，时钟中断不再
 由外部硬件触发，而是由集成在各个CPU核中的LAPIC中。因此，每个CPU都相应各自产生的时钟中断，各个中断之间不保证同步。换言之，在Refcache（见\ref{subsec:refcache}）等需要时钟同步的分布式算法中，需要软件实现时钟同步。
 
-TODO
+在多核系统上，各个CPU除了使用Cache一致共享内存的方式通讯，还可以以Message-Passing的方式通讯。在AMD64多核系统中，这种通讯方式一般用核间中断（IPI）的方式实现。
+IPI中断是一种特殊的硬件中断，操作系统可以对LAPIC进行编程，向任意CPU内核发起IPI请求。在uCore中，每个CPU核有自己的IPI请求队列。当$CPU_A$需要向$CPU_B$发送IPI请求，$CPU_A$先把请求的数据和回调函数指针发到$CPU_B$的请求队列中，然后向$CPU_B$发起IPI中断，最后$CPU_B$在其中断处理例程中检查自己的IPI请求队列，并执行请求。此过程如图\ref{fig:ipi-uml}所示。
+
+\begin{figure}
+  \centering
+
+\begin{sequencediagram}
+\newthread{a}{:$CPU_A$} 
+\newinst[2]{q}{:$Queue_B$}
+\newthread[gray]{b}{:$CPU_B$}
+
+\begin{call}{a}{add\_request()}{q}{}
+\end{call}
+
+\mess{a}{IPI}{b}
+
+\begin{sdblock}{Loop}{poll rqs}
+\begin{call}{b}{get\_request()}{q}{} 
+\end{call}
+\end{sdblock}
+
+\mess{b}{done}{a}
+
+\end{sequencediagram}
+\label{fig:ipi-uml}
+\caption{IPI处理过程UML图}
+\end{figure}
+
 
 \subsection{AP启动}
 AMD64多核系统启动与单核系统的主要区别在于应用处理器的启动。AMD64多核系统中，上电后只有一个CPU开始正常运行，这个CPU被称为Bootstrap CPU（BSP），其他CPU处于halt状态，这些CPU被称为Application Processor（AP）\cite{intelmp}。多核操作系统启动主要分为两个阶段：
@@ -217,10 +245,10 @@ AMD64多核系统启动与单核系统的主要区别在于应用处理器的启
 所有AP打开中断进入正常主循环后，系统启动完成。
 
 \section{多核操作系统基础设施实现}
-本节介绍uCore中为多核系统特别优化的部分相关数据结构的实现。
+本节介绍uCore中为多核系统特别优化的部分数据结构的实现。
 
 \subsection{无锁数据结构的实现}
-一直以来，操作系统常用互斥锁保护链表、平衡树等数据结构。但是，这种数据结构难以在多核系统上达到较佳的可扩展性。今年来，有研究者\cite{Fraser:2007:CPW:1233307.1233309}提出使用硬件比较-交换指令（compare-and-swap，CAS）构成堆栈、链表和无锁跳表等数据结构。使用这类无锁数据结构可以避免使用粒度较大的互斥锁对整个数据结构进行保护，减少出现锁竞争的机会。但是，无锁数据结构并不保证内核的多核可扩展性，例如在多核操作系统的VM子系统使用无锁跳表管理虚拟地址区域（VMA）元数据会带来严重的Cache竞争\cite{radixvm:2013}，反而影响系统性能。
+一直以来，操作系统常用互斥锁保护链表、平衡树等数据结构。但是，这种数据结构难以在多核系统上达到较佳的可扩展性。今年来，有研究者\cite{Fraser:2007:CPW:1233307.1233309}提出使用硬件比较-交换指令（compare-and-swap，CAS）构成堆栈、链表和无锁跳表等数据结构。使用这类无锁数据结构可以避免使用粒度较大的互斥锁对整个数据结构进行保护，减少出现锁竞争的机会。但是，无锁数据结构并不保证内核的多核可扩展性，例如在多核操作系统的VM子系统使用无锁跳表管理虚拟地址区域（VMA）元数据会带来严重的Cache竞争\cite{radixvm:eurosys13}，反而影响系统性能。
 
 uCore中实现了无锁堆栈，可以用在Slab分配器中可以管理空闲页链表（Freelist）。无锁堆栈共支持三种操作：初始化init、压栈push和弹出栈顶pop，数据结构定义如下：
 
@@ -237,17 +265,26 @@ struct lockfree_stack{
 };
 \end{lstlisting}
 
-为了实现push和pop操作需要使用CAS指令切换栈顶指针（lockfree\_stack中的top指针）。实现无锁数据结构的一个常见问题是所谓ABA问题\cite{Fraser:2007:CPW:1233307.1233309}。对于无锁栈，解决ABA问题的方法使用了堆栈修改计数器oc，并在pop堆栈项操作中，修改栈顶的同时修改计数器oc（这在AMD64上使用16字节CAS指令完成）。
+为了实现push和pop操作需要使用CAS指令切换栈顶指针（lockfree\_stack中的top指针）。实现无锁数据结构的一个常见问题是所谓ABA问题\cite{Fraser:2007:CPW:1233307.1233309}。对于无锁栈，为解决ABA问题的方法使用了堆栈修改计数器oc，并在pop堆栈项操作中，修改栈顶的同时修改计数器oc（这在AMD64上使用16字节CAS指令完成）。使用这种方法，pop函数可以通过跟踪lockfree\_stack结构中top指针的``版本号''，避免ABA问题。
 
 \subsection{支持NUMA的物理页分配器}
+为了高效支持对NUMA架构，uCore中实现了一个基于非连续内存模型多核物理页分配器。此物理页分配器包括以下几个组成部分：
+\begin{itemize}
+	\item 内存拓扑检测
+	\item 对每个NUMA节点，初始化各自的伙伴系统分配器（Buddy System）
+	\item
+		NUMA节点内存分配策略，如果当前节点有足够的空闲内存，在本节点上分配物理页，
+		若当前节点内存不足，则应该尝试使用其他节点的物理页（这可能降低系统性能）
+\end{itemize}
 
-\subsection{per-CPU变量实现}
+在NUMA系统上实现高效的物理页分配器是复杂的，现在uCore的实现中未考虑NUMA节点见的距离（这个信息可以从ACPI的SLIT表中获得）。对uCore上物理内存分配器的一个改进是，通过NUMA节点距离信息，从距离本CPU节点最近的NUMA内存节点上分配内存。
+
+\subsection{percpu变量实现}
 \label{subsec:percpu}
 
 与用户态编程中的线程本地存储（Thread Local Storage）类似，多核操作系统内核运行过程中，对每个CPU，需要分配其私有存储空间来存储各个CPU独有的状态信息，例如本CPU上真正执行的线程控制块指针current。在多核系统中使用percpu变量的一个好处是可以避免多CPU读写同一个内存地址，造成Cache一致性协议开销，提高系统的可扩展性。
 在uCore中，CPU0占用percpu变量空间在内核镜像中静态分配，保证内核在启动时可以尽早使用BSP的percpu变量存储空间。AP的percpu变量空间在启动过程中由BSP动态地在其所在NUMA节点上分配，保证AP访问percpu变量的高效性。
 
-本毕设percpu变量实现设计如图\ref{fig:percpu-impl}所示。
 
 \begin{figure}[ht]
 \centering
@@ -282,7 +319,7 @@ struct lockfree_stack{
 \label{fig:percpu-impl}
 \end{figure}
 
- 图\ref{fig:percpu-impl}中黄色部分内存在内核镜像上静态分配，绿色部分内存在各自的NUMA节点上动态分配。下面以一个percpu变量$ticks$为例，说明
+本毕设percpu变量实现设计如图\ref{fig:percpu-impl}所示。 图\ref{fig:percpu-impl}中黄色部分内存在内核镜像上静态分配，绿色部分内存在各自的NUMA节点上动态分配。下面以一个percpu变量$ticks$为例，说明
 uCore中percpu变量的工作原理：
 \begin{enumerate}
 \item
@@ -310,14 +347,55 @@ ticks_k = percpu\_offsets[k] + ( Addr(ticks_0) - percpu\_offsets[0] )
 \subsection{可扩展引用计数器的实现}
 \label{subsec:refcache}
 
+本毕设在\ref{sec:counter}介绍了引用计数器的建模，并得出引用计数器在多数情况下是可以通过可扩展方式实现的。本节将介绍uCore中实现的一种可扩展引用计数算法。
+
+为了解决原子加减操作在多核系统上的可扩展性瓶颈，研究界如sloppy
+counters\cite{linux:osdi10}, Scalable NonZero Indicators\cite{Ellen:2007:SSN:1281100.1281106}
+等可扩展计数器。它们的基本思路都是把全局计数器分解成$N$个CPU私有计数器（存储相对于全局计数器的增量），只有当需要获取计数器真实值时才发起核间通讯，把所有私有计数器相加。本毕设在uCore的基础设施上实现了一种新型可扩展计数器Refcache\cite{radixvm:eurosys13}。Refcache相对与其他算法相比，优势是使用了类似CPU
+Cache的思想，在每个核上Refcache使用的空间是常数（不随使用的计数器个数增加）。
+
+Austin等人\cite{radixvm:eurosys13}提出的Refcache计数器主要有如下四个操作：
+
+\begin{itemize}
+	\item $inc()$ 操作，CPU本地计数器加一
+	\item $dec()$ 操作，CPU本地计数器减一
+	\item $evict()$
+		操作，当Cache中的哈希表项出现碰撞时，把旧表项中的计数增量加到全局计数器中。
+		若发现对象引用计数的真实值变为零，调用回调函数释放内存
+	\item $flush()$
+		操作，把CPU中的所有增量Cache应用到全局计数器中，并无效化所有增量Cache
+\end{itemize}
+
+	以上四个操作中，前两个操作（使用最频繁的操作）执行时只需要关闭内核抢占即可，无需核间同步。后两个操作尽管需要自旋锁保护关键代码段，但是当增量Cache足够大时（或哈希冲突频率足够小），它们只由时钟中断以一定频率（如每10毫秒一次）调用，对系统性能影响不大。
+
+	本毕设实现了两个版本的Refcache（见表\ref{tab:refcache-lines}），一个是基于uCore的内核态实现，另一个是Ruby实现的用户态Refcache，用于研究其性质。
+
+\begin{table}[ht]
+  \centering
+  \caption{Refcache实现}
+  \label{tab:refcache-lines}
+    \begin{tabular*}{\linewidth}{lll}
+      \toprule[1.5pt]
+      {\heiti 文件} & {\heiti 描述} & {\heiti 行数} \\\midrule[1pt]
+      refcache.h & 内核态C实现 & 71 \\
+      refcache.c & 内核态C实现 & 237 \\
+      \hline
+	refcache.rb & 用户态Ruby实现 & 113 \\
+      \bottomrule[1.5pt]
+    \end{tabular*}
+\end{table}
+
+
+
 \section{基于QEMU的全系统性能采集工具QPROF}
 为了在模拟器中方便地寻找操作系统内核的瓶颈，本毕设这种方法结合了Qemu和gprof的两个开源软件，实现了一个全系统的Profiler
- \pozhehao QProf。
+\pozhehao
+QProf\footnote{https://github.com/chyh1990/qemu/tree/1.3-profiler}。
 
 由于真实操作系统工作环境的复杂性，很难通过分析源代码等静态分析方法发现内核中的性能问题。
 本全系统性能测试工具通过动态分析的方法，在内核运行过程中允许程序员方便地对操作系统内核的各个函数进行跟踪和计时。通过这些信息，可以较为容易地发现内核的运行的关键路径
 （也正是内核代码的瓶颈所在），并发现潜在的性能问题。
-真实应用上的测试结果见\ref{cha:test}。
+真实应用上的测试结果第\ref{cha:test}章。
 
 \subsection{QProf原理}
 	目前，对程序做性能测试的方法主要有两种：
@@ -328,16 +406,28 @@ ticks_k = percpu\_offsets[k] + ( Addr(ticks_0) - percpu\_offsets[0] )
 			系统中定时产生时钟中断时间，打断程序运行，采集当前程序计数器值（Program
 			Counter）。通过采样点的分布，估计各个函数运行时间。
 	\end{enumerate}
-	QProf系统结合了上述两种方法对操作系统内核进行性能测试。它与传统用户态性能测试工具的主要区别是，QProf使用Qemu作为运行环境，可以跟踪CPU的底层状态。使用模拟器的跟踪操作系统内核性能情况的一个问题是，Qemu中使用软件模拟外设硬件的行为，如果操作系统的真正瓶颈在IO操作上（而非算法），则QProf难以直接发现真实的性能瓶颈。但是通过QProf采集的函数调用次数等其他信息，开发者可以分析和推测系统的问题所在。
 
-	QProf的主要原理如下所示：
+	QProf系统结合了上述两种方法对操作系统内核进行性能测试。它与传统用户态性能测试工具的主要区别是，QProf使用Qemu作为运行环境，可以跟踪CPU的底层状态。使用模拟器的跟踪操作系统内核性能情况的一个问题是，Qemu中使用软件模拟外设硬件的行为，如果操作系统的真正瓶颈在IO操作上（而非算法），则QProf难以直接发现真实的性能瓶颈。但是通过QProf采集的函数调用次数等其他信息，开发者可以分析和推测系统的问题所在。 QProf的主要原理如下所示：
 	\begin{itemize}
 		\item 编译内核时加入-pg参数，GCC会在所有
 			函数的prolog中插入一个mcount函数调用，
 			用于跟踪函数调用图（Call graph）
 		\item 在内核中实现mcount函数，加入一条对Supervisor（QEMU）
-			回调指令
+			回调指令。在QProf中，使用如下汇编代表做回调：
+\begin{lstlisting}
+        movq    56(%rsp),%rsi
+        /* Get frompc via the frame pointer.*/
+        movq    8(%rbp),%rdi
+        /* call the hypervisor */
+        mov     $MAGIC_ECX, %ecx
+        wrmsr
+\end{lstlisting}
 		\item 修改QEMU，对Supervisor的回调进行响应，生成调用图。
 			并定时采样，做profile。
 	\end{itemize}
 
+\section{小结}
+
+本节介绍了uCore多核平台硬件抽象层的架构与AMD64
+NUMA平台上硬件相关代码的实现。在此基础之上，
+实现了无锁堆栈、Refcache等多核可扩展的数据结构。最后，介绍了基于QEMU的性能测试工具QProf的设计。
