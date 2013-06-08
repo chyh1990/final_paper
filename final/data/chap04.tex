@@ -257,6 +257,8 @@ AMD64多核系统启动与单核系统的主要区别在于应用处理器的启
 
 uCore中实现了无锁堆栈，可以用在Slab分配器中可以管理空闲页链表（Freelist）。无锁堆栈共支持三种操作：初始化init、压栈push和弹出栈顶pop，数据结构定义如下：
 
+\begin{Code}
+	\centering
 \begin{lstlisting}
 struct lockfree_stack_entry{
 	volatile struct lockfree_stack_entry *link;
@@ -270,6 +272,7 @@ struct lockfree_stack{
 };
 \end{lstlisting}
 
+\end{Code}
 为了实现push和pop操作需要使用CAS指令切换栈顶指针（lockfree\_stack中的top指针）。实现无锁数据结构的一个常见问题是所谓ABA问题\cite{Fraser:2007:CPW:1233307.1233309}。对于无锁栈，为解决ABA问题的方法使用了堆栈修改计数器oc，并在pop堆栈项操作中，修改栈顶的同时修改计数器oc（这在AMD64上使用16字节CAS指令完成）。使用这种方法，pop函数可以通过跟踪lockfree\_stack结构中top指针的``版本号''，避免ABA问题。
 
 \subsection{支持NUMA的物理页分配器}

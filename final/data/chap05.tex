@@ -99,6 +99,26 @@ numa_mem_zone 0: 0x0000000002612000 - 0x000000007b6cdfff, 1974MB
 
 编写同时支持真实机器和模拟器的uCore内核是重要的，因为两种运行环境都有各自的优势和不足
 
+\section{多核支持测试}
+为了测试多核uCore对系统CPU核的使用情况，本毕设编写了一个简单的并行矩阵乘法用户态程序matrix。默认情况下，此程序将使用系统中所有可用CPU内核经行计算\footnote{测试环境：Intel
+i5 3.0GHz, 4核机器}。表\ref{tab:mp-matrix}是本程序在不同CPU核数上运行时间的测试结果，可见运行时间大致与核数成反比关系，与理论分析一致。
+
+\begin{table}[ht]
+  \centering
+  \caption{uCore多核测试}
+  \label{tab:mp-matrix}
+    \begin{tabular*}{0.6\linewidth}{c|ll}
+      \toprule[1.5pt]
+      {\heiti CPU核数} & {\heiti 用时/秒} \\\midrule[1pt]
+      1 & 13.70  \\
+      2 & 7.40  \\
+      4 & 4.00   \\
+      \bottomrule[1.5pt]
+    \end{tabular*}
+\end{table}
+
+
+
 \section{可扩展引用计数器测试与分析}
 在四核机器上，使用7个内核线程（另外一个主线程控制测试）对引用计数器进行测试。原子操作指令和Cache竞争是造成引用计数器可扩展性问题的根源，表\ref{tab:refcache-stat}比较了使用普通原子操作和Refcache对内存总线加锁的次数。
 
@@ -127,26 +147,20 @@ numa_mem_zone 0: 0x0000000002612000 - 0x000000007b6cdfff, 1974MB
     \end{tabular*}
 \end{table}
 
-\begin{figure}
+\begin{figure}[ht]
 \begin{minipage}{0.48\textwidth}
   \centering
   \includegraphics[width=\textwidth]{figures/refcache1.pdf}
-  \label{fig:rc-cmp}
 \end{minipage}\hfill
 \begin{minipage}{0.48\textwidth}
   \centering
   \includegraphics[width=\textwidth]{figures/refcache2.pdf}
-  \label{fig:rc-rconly}
 \end{minipage}
 \caption{Refcache性能对比}
+\label{fig:rc-cmp}
 \end{figure}
 
-
-
-由图\ref{fig:rc-rconly}测试结果可以看出，Refcache的全局同步次数成阶梯状方便，这是因为Refcache在多数情况下只在时钟中断到来是发起全局同步操作，判断对象引用次数是否为0。Refcache使用CPU本地缓存吸收了大量inc和dec操作，更新全局计数器的次数大大减少。因而Refcache比使用一般原子操作在多核系统上有更好的可扩展性表现。
-
-\section{多核测试}
-TODO
+由图\ref{fig:rc-cmp}测试结果可以看出，Refcache的全局同步次数成阶梯状方便，这是因为Refcache在多数情况下只在时钟中断到来是发起全局同步操作，并判断对象引用次数是否为0。Refcache使用CPU本地缓存吸收了大量inc和dec操作，更新全局计数器的次数大大减少。因而Refcache比使用一般原子操作在多核系统上有更好的可扩展性表现。
 
 \section{QProf测试}
 为了使用本测试系统，必须使用修改过的Qemu软件模拟器运行内核：
@@ -214,4 +228,3 @@ Filesystem，VFS）中没有实现类似Linux的Page
 Cache机制和IO调度机制，在执行ls命令时，内核需要多次读取磁盘上不连续的扇区，导致磁盘IO
 性能问题。
 
-  \includegraphics[width=\textwidth]{figures/refcache1.png}
