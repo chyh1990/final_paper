@@ -3,6 +3,9 @@
 在上一章多核操作系统可扩展性理论的基础上，本章将介绍在清华uCore实验操作系统的基础上加入对最新NUMA的多核处理器的支持，并用数种多核可扩展的数据结构和算法改造其内核数据结构。本章还介绍了本毕设设计了新型性能测试工具QProf的原理。
 
 \section{uCore多核硬件抽象层}
+uCore是清华大学研发的一个硬件平台的、遵循简化Posix标准的实验操作系统。在部分硬件平台（如ARM）上，uCore对uclibc和
+bionic
+C两种标准C库有较为完整的支持。但一直以来此内核都缺少对多核平台架构的支持。本毕设的一项重要工作是为uCore操作系统内核增加AMD64多核架构支持。
 
 \subsection{概述}
 uCore作为一个实验操作系统内核，包含了现代操作系统中各个主要组成部分。与Linux等主流开源操作系统类似，uCore把内核代码分为硬件无关代码（如进程管理、调度器）和硬件相关代码（包括一级硬件中断处理，硬件初始化等）。这两部分代码之间由硬件抽象层（HAL）连接，此代码层保证了uCore可以在多种硬件平台上方便地移植。事实上，现在uCore实验操作系统已经可以在i386、ARM、MIPS等平台上正常工作。但一直以来，此内核都未加入对SMP或NUMA平台的完善支持。本毕设的一项重要内容是在uCore中加入了较为健全的NUMA抽象层，并在实现了对AMD64多核硬件平台的支持。而对SMP多核系统，可以看做是NUMA架构中NUMA节点数为1的特例，在本毕设的多核硬件抽象中可以得到自然的统一的支持。
@@ -40,16 +43,17 @@ sysconf        &   硬件配置信息抽象 \\
   \centering
   \caption{uCore硬件相关部分（AMD64）主要代码结构}
   \label{tab:ucore-amd64}
-    \begin{tabular*}{\linewidth}{lp{8cm}}
+    \begin{tabular*}{\linewidth}{lp{8cm}l}
       \toprule[1.5pt]
-      {\heiti 目录} & {\heiti 描述} \\\midrule[1pt]
-debug  &  硬件相关调试工具\\
-driver &    硬件驱动，本毕设实现了ACPI、IOAPIC、LAPIC等多核OS必须的驱动 \\
-init  & 内核初始化代码，包括Boot CPU和AP进入长模式的启动代码\\
-libs  &  AMD64上自旋锁、GDT等硬件相关函数\\
-mm &   支持NUMA系统的物理页管理系统\\
-numa & AP初始化和核间通讯模块\\
-trap & 硬件中断、CPU核间中断处理 \\
+      {\heiti 目录} & {\heiti 描述} & {\heiti 代码行数}\\\midrule[1pt]
+debug  &  硬件相关调试工具 & 304 \\
+driver &    硬件驱动，本毕设实现了ACPI、IOAPIC、LAPIC等多核OS必须的驱动  &
+3087 \\
+init  & 内核初始化代码，包括Boot CPU和AP进入长模式的启动代码 & 568\\
+libs  &  AMD64上自旋锁、GDT等硬件相关函数 & 1099 \\
+mm &   支持NUMA系统的物理页管理系统 & 2328 \\
+numa & AP初始化和核间通讯模块 & 265 \\
+trap & 硬件中断、CPU核间中断处理 & 2026 \\
       \bottomrule[1.5pt]
     \end{tabular*}
 \end{table}
@@ -139,6 +143,7 @@ uCore中NUMA拓扑结构相关关键数据结构如下：
 \section{AMD64多核NUMA架构硬件支持的实现}
 本毕设在实验操作系统内核uCore的硬件抽象层基础上，加上了相对完整的x86\_64
 NUMA多核架构支持。本内核已经在QEMU软件模拟器、KVM硬件虚拟化平台和支持ACPI的Intel真实机器上测试通过。
+本节对实现过程中的重点和难点做简要介绍。
 
 \subsection{ACPI支持}
 为了支持多核CPU和NUMA结构，操作系统在启动的前期必须通过某种方式读取系统的拓扑结构信息，这些信息包括但不限于：

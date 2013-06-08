@@ -97,6 +97,8 @@ numa_mem_zone 0: 0x0000000002612000 - 0x000000007b6cdfff, 1974MB
 	\end{Verbatim}
 }
 
+编写同时支持真实机器和模拟器的uCore内核是重要的，因为两种运行环境都有各自的优势和不足
+
 \section{可扩展引用计数器测试与分析}
 在四核机器上，使用7个内核线程（另外一个主线程控制测试）对引用计数器进行测试。原子操作指令和Cache竞争是造成引用计数器可扩展性问题的根源，表\ref{tab:refcache-stat}比较了使用普通原子操作和Refcache对内存总线加锁的次数。
 
@@ -108,15 +110,40 @@ numa_mem_zone 0: 0x0000000002612000 - 0x000000007b6cdfff, 1974MB
     \begin{tabular*}{0.6\linewidth}{c|ll}
       \toprule[1.5pt]
       {\heiti $dec/inc$次数} & {\heiti Atomic} & {\heiti Refcache}  \\\midrule[1pt]
-	30  & 30   & 10	 \\
-	58  & 58   & 14  \\
-	114 & 114  & 22  \\
-	226 & 226  & 35  \\
+	30  & 30   & 8	 \\
+	44  & 44   & 8   \\
+	58  & 58   & 10  \\
+	72  & 72   & 12  \\
+	86  & 86   & 14  \\
+	100  & 100   & 16  \\
+	114 & 114  & 18  \\
+	128 & 128  & 20  \\
+	142 & 142  & 20  \\
+	226 & 226  & 20  \\
+	240 & 240  & 22  \\
+	254 & 254  & 22  \\
+	268 & 268  & 22  \\
       \bottomrule[1.5pt]
     \end{tabular*}
 \end{table}
 
-由上述测试结果可以看出，Refcache使用CPU本地缓存吸收了大量inc和dec操作，更新全局计数器的次数大大减少。因而Refcache比使用一般原子操作在多核系统上有更好的可扩展性表现。
+\begin{figure}
+\begin{minipage}{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/refcache1.pdf}
+  \label{fig:rc-cmp}
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/refcache2.pdf}
+  \label{fig:rc-rconly}
+\end{minipage}
+\caption{Refcache性能对比}
+\end{figure}
+
+
+
+由图\ref{fig:rc-rconly}测试结果可以看出，Refcache的全局同步次数成阶梯状方便，这是因为Refcache在多数情况下只在时钟中断到来是发起全局同步操作，判断对象引用次数是否为0。Refcache使用CPU本地缓存吸收了大量inc和dec操作，更新全局计数器的次数大大减少。因而Refcache比使用一般原子操作在多核系统上有更好的可扩展性表现。
 
 \section{多核测试}
 TODO
@@ -187,3 +214,4 @@ Filesystem，VFS）中没有实现类似Linux的Page
 Cache机制和IO调度机制，在执行ls命令时，内核需要多次读取磁盘上不连续的扇区，导致磁盘IO
 性能问题。
 
+  \includegraphics[width=\textwidth]{figures/refcache1.png}
