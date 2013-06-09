@@ -1,13 +1,69 @@
 
 \chapter{多核操作系统关键模块设计实现}
-在上一章多核操作系统可扩展性理论的基础上，本章将介绍在清华uCore实验操作系统的基础上加入对最新NUMA的多核处理器的支持，并用数种多核可扩展的数据结构和算法改造其内核数据结构。
-\section{uCore多核硬件抽象层}
-uCore是清华大学研发的一个硬件平台的、遵循简化Posix标准的实验操作系统。在部分硬件平台（如ARM）上，uCore对uclibc和
+在上一章多核操作系统可扩展性理论的基础上，本毕设在清华大学uCore实验操作系统中加入了对最新NUMA的多核处理器架构的支持，并用数种多核可扩展的数据结构和算法改造其内核数据结构。
+
+\section{uCore系统架构}
+uCore是清华大学研发的一个跨硬件平台的、遵循简化Posix标准的实验操作系统。在部分硬件平台（如ARM）上，uCore对uclibc和
 bionic
 C两种标准C库有较为完整的支持。但一直以来此内核都缺少对多核平台架构的支持。本毕设的一项重要工作是为uCore操作系统内核增加AMD64多核架构支持。
 
+\begin{figure}[ht]
+\centering
+\pgfdeclarelayer{background}
+\pgfdeclarelayer{foreground}
+\pgfsetlayers{background,main,foreground}
+\tikzstyle{mod} = [text centered,fill=blue!20, draw, minimum height=2.5em,
+ drop shadow]
+
+\tikzstyle{wmod} = [mod, text width=9cm, minimum height=1.7em]
+\begin{tikzpicture}[node distance=0.7cm]
+    \node (qe) [wmod] {System Interface};
+    \matrix (mm) [below=0.5em of qe,column sep=0.1cm]{
+    \node (mydb) [mod] {\begin{tabular}{c}
+	    Memory \\
+	    Management\\
+    \end{tabular}}; &
+    \node (idxdbs) [mod] {
+	    \begin{tabular}{c}
+		    VFS \\
+		    (SFS/FAT/YAFFS) \\
+	    \end{tabular}
+    }; &
+    \node (idxdbi) [mod] {\begin{tabular}{c}
+	    Device \\
+	    Management \\
+    \end{tabular}}; &&
+    \node (idxdbp) [mod] {\begin{tabular}{c}
+    Process \\
+    Threads \\
+    \end{tabular}
+    }; \\
+    };
+    \node (sapi) [wmod, below=0.5em of mm]  {Hardware Abstract Layer};
+    \node (hw) [wmod, below=0.5em of sapi, fill=red!20]  {Hardware};
+    \node [below=0.8em of hw]  (SYS) {uCore kenrel space};
+    \begin{pgfonlayer}{background}
+        % Compute a few helper coordinates
+        \path (mydb.west |- qe.north)+(-0.5,0.3) node (a) {};
+        \path (SYS.south -| idxdbp.east)+(+0.5,-0.3) node (b) {};
+        \path[fill=yellow!20,rounded corners, draw=black!50, dashed]
+            (a) rectangle (b);
+    \end{pgfonlayer}
+\end{tikzpicture}
+
+\caption[uCore系统架构框图]{uCore系统结构框图}\label{fig:ucore-arch}
+\end{figure}
+
+
+uCore作为一个现代实验操作系统内核，包含了现代操作系统中各个主要组成部分（如图\ref{fig:ucore-arch}）。与Linux等主流开源操作系统类似，uCore把内核代码分为硬件无关代码（如进程管理、调度器）和硬件相关代码（包括一级硬件中断处理，硬件初始化等）。这两部分代码之间由硬件抽象层（HAL）连接，此代码层保证了uCore可以在多种硬件平台上方便地移植。事实上，现在uCore实验操作系统已经可以在i386、ARM、MIPS等平台上正常工作。
+
+为了使uCore能适应多核NUMA硬件架构，对原有系统做多核扩展是，内存管理子系统（Memory
+Management）和进程/线程管理子系统是最需要重大修改的地方。例如，对于NUMA系统，物理页分配器需要系统的内存/CPU拓扑结构制定分配策略；对于进程/线程调度系统，需要管理多核上的负载平衡和进程迁移。
+
+
+\section{uCore多核硬件抽象层}
 \subsection{概述}
-uCore作为一个实验操作系统内核，包含了现代操作系统中各个主要组成部分。与Linux等主流开源操作系统类似，uCore把内核代码分为硬件无关代码（如进程管理、调度器）和硬件相关代码（包括一级硬件中断处理，硬件初始化等）。这两部分代码之间由硬件抽象层（HAL）连接，此代码层保证了uCore可以在多种硬件平台上方便地移植。事实上，现在uCore实验操作系统已经可以在i386、ARM、MIPS等平台上正常工作。但一直以来，此内核都未加入对SMP或NUMA平台的完善支持。本毕设的一项重要内容是在uCore中加入了较为健全的NUMA抽象层，并在实现了对AMD64多核硬件平台的支持。而对SMP多核系统，可以看做是NUMA架构中NUMA节点数为1的特例，在本毕设的多核硬件抽象中可以得到自然的统一的支持。
+尽管uCore已经可以可以在多种硬件平台上运行，但是一直以来，uCore操作系统内核都未加入对SMP或NUMA平台的完善支持。本毕设的一项重要内容是在uCore中加入了较为健全的NUMA抽象层，并在实现了对AMD64多核硬件平台的支持。而对SMP多核系统，可以看做是NUMA架构中NUMA节点数为1的特例，在本毕设的多核硬件抽象中可以得到自然的统一的支持。
 
 为了使uCore可以支持多核硬件平台，本毕设对硬件无关代码也加入了相关扩展。加入NUMA支持后的内核硬件无关层代码结构如表\ref{tab:ucore-common}所示。
 通过把与硬件无关的多核支持相关代码与硬件特定代码分离，可以大大减少未来其他加入其他多核硬件架构（如多核ARM平台）支持的工作量。
@@ -154,7 +210,8 @@ NUMA多核架构支持。本内核已经在QEMU软件模拟器、KVM硬件虚拟
 \end{itemize}
 
 对于AMD64多核架构（如图\ref{fig:mp-arch}所示），这些拓扑信息由主板上的ACPI模块管理。在主板出厂前，硬件厂商把硬件的部分拓扑结构信息写入Firmware中的
-	ACPI表。OS通过读取此表，NUMA节点等信息。上电自检后，BIOS把系统拓扑信息记录到ACPI表，并把它映射到预先定义好的内存地址上，操作系统通过读取这些信息表，即可获得当前系统的配置信息。现时uCore中用到的ACPI信息表如表\ref{tab:acpi}所示，各表项的具体结构见文献\cite{acpica}。这些表为uCore操作系统提供了NUMA节点和CPU、内存关联性等必要信息。
+	ACPI表。操作系统通过读取此表，获取NUMA节点等硬件信息。
+	上电自检后，BIOS把系统拓扑信息记录到ACPI表，并把它映射到预先定义好的内存地址上，操作系统通过读取这些信息表，即可获得当前系统的配置信息。现时uCore中用到的ACPI信息表如表\ref{tab:acpi}所示，各表项的具体结构见文献\cite{acpica}。这些表为uCore操作系统提供了NUMA节点和CPU、内存关联性等必要信息。
 
 \begin{figure}[ht]
 \begin{center}
@@ -192,9 +249,8 @@ AMD64多核系统的分布式中断系统如图\ref{fig:mp-arch}所示，外部�
 由外部硬件触发，而是由集成在各个CPU核中的LAPIC中。因此，每个CPU都相应各自产生的时钟中断，各个中断之间不保证同步。换言之，在Refcache（见\ref{subsec:refcache}）等需要时钟同步的分布式算法中，需要软件实现时钟同步。
 
 在多核系统上，各个CPU除了使用Cache一致共享内存的方式通讯，还可以以Message-Passing的方式通讯。在AMD64多核系统中，这种通讯方式一般用核间中断（IPI）的方式实现。
-IPI中断是一种特殊的硬件中断，操作系统可以对LAPIC进行编程，向任意CPU内核发起IPI请求。在uCore中，每个CPU核有自己的IPI请求队列。当$CPU_A$需要向$CPU_B$发送IPI请求，$CPU_A$先把请求的数据和回调函数指针发到$CPU_B$的请求队列中，然后向$CPU_B$发起IPI中断，最后$CPU_B$在其中断处理例程中检查自己的IPI请求队列，并执行请求。此过程如图\ref{fig:ipi-uml}所示。
 
-\begin{figure}
+\begin{figure}[ht]
   \centering
 
 \begin{sequencediagram}
@@ -215,10 +271,12 @@ IPI中断是一种特殊的硬件中断，操作系统可以对LAPIC进行编程
 \mess{b}{done}{a}
 
 \end{sequencediagram}
-\label{fig:ipi-uml}
+\label{fig:ipiuml}
 \caption{IPI处理过程UML图}
 \end{figure}
 
+
+IPI中断是一种特殊的硬件中断，操作系统可以对LAPIC进行编程，向任意CPU内核发起IPI请求。在uCore中，每个CPU核有自己的IPI请求队列。当$CPU_A$需要向$CPU_B$发送IPI请求，$CPU_A$先把请求的数据和回调函数指针发到$CPU_B$的请求队列中，然后向$CPU_B$发起IPI中断，最后$CPU_B$在其中断处理例程中检查自己的IPI请求队列，并执行请求。
 
 \subsection{AP启动}
 AMD64多核系统启动与单核系统的主要区别在于应用处理器的启动。AMD64多核系统中，上电后只有一个CPU开始正常运行，这个CPU被称为Bootstrap CPU（BSP），其他CPU处于halt状态，这些CPU被称为Application Processor（AP）\cite{intelmp}。多核操作系统启动主要分为两个阶段：
@@ -396,6 +454,7 @@ Austin等人\cite{radixvm:eurosys13}提出的Refcache计数器主要有如下四
 
 \section{小结}
 
-本节介绍了uCore多核平台硬件抽象层的架构与AMD64
+本节介绍了uCore软件架构、多核平台硬件抽象层的设计与AMD64
 NUMA平台上硬件相关代码的实现。在此基础之上，
-实现了无锁堆栈、Refcache等多核可扩展的数据结构。
+实现了无锁堆栈、Refcache等多核可扩展的数据结构。这些工作，为以后
+进一步研究操作系统的多核可扩展性奠定了基础。

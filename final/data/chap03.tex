@@ -2,7 +2,7 @@
 \chapter{多核操作系统可扩展性分析与建模}
 
 本节将介绍在现代AMD64多核处理器上造成操作系统可扩展性瓶颈的原因。值得注意的是本毕设只考虑由于多核CPU核间通讯开销造成的操作系统性能退化，
-一下讨论均假设系统中其他因素（如I/O操作）不会造成的性能瓶颈。
+以下讨论均假设系统中其他因素（如I/O操作）不会造成性能瓶颈。
 
 \section{操作系统多核可扩展瓶颈分析}
 
@@ -61,7 +61,7 @@ int main(int argc, const char* argv[]) {
 }
 \end{lstlisting}
 
-在上面的程序中，用mmap系统调用多次向操作系统申请空闲的虚拟地址空间。由于同一进程的多个线程共享同一个地址空间（即同一VMA结构体），这在多核系统上将造成mm->mmap\_sem锁的饱和竞争情况，测试结果如图\ref{fig:mmap_test}所示。应该注意的是，我们调用mmap时使用了MAP\_PRIVATE和MAP\_ANONYMOUS标志，并且不指定addr参数申请固定的虚拟内存地址，操作系统应该有最大的自由度选择适当的虚拟内存区域避免VMA操作的竞争。但从测试结果可以看出，当CPU核数增多时，每秒执行的mmap次数反而降低。这符合Linux代码中VMA结构上由于内核中锁竞争造成应用程序严重性能瓶颈的预期。但是，下面我们将通过对Posix系统调用接口中mmap/munmap和缺页中断的建模，并通过符号执行技术证明Linux中对非重叠区域上VMA全局进程锁是不必要的。
+在上面的程序中，用mmap系统调用多次向操作系统申请空闲的虚拟地址空间。由于同一进程的多个线程共享同一个地址空间（即同一VMA结构体），这在多核系统上将造成mm->mmap\_sem锁的饱和竞争情况，测试结果如图\ref{fig:mmap_test}所示。应该注意的是，我们调用mmap时使用了MAP\_PRIVATE和MAP\_ANONYMOUS标志，并且不指定addr参数申请固定的虚拟内存地址，操作系统应该有最大的自由度选择适当的虚拟内存区域避免VMA操作的竞争。但从测试结果可以看出，当CPU核数增多时，每秒执行的mmap次数反而降低。这与预期一致：Linux内核中VMA对象进程全局锁上的竞争成为应用程序多核扩展性的瓶颈。但是，下面我们将通过对Posix系统调用接口中mmap/munmap和缺页中断的建模，并通过符号执行技术证明Linux中对非重叠区域上VMA全局进程锁是不必要的。
 
 \begin{figure}[ht]
 \begin{center}
@@ -156,20 +156,20 @@ void counter_sub(struct state *counter)
 
 第三步、使用KLEE对上述模型作符号执行，求得counter\_add和counter\_sub的可交换条件，KLEE的一个输入如下所示：
 
-	\begin{lstlisting}[caption=KLEE输出样例]
+\begin{lstlisting}[caption=KLEE输出样例]
 ktest file : 'klee-last/test000001.ktest'
 args       : ['./counter.o']
 num objects: 1
 object    0: name: 'c1'
 object    0: size: 8
 object    0: data: '\xff\xff\xff\x7f\x00\x00\x00\x00'
-	\end{lstlisting}
+\end{lstlisting}
 
 在上述这个例子中，KLEE输出了两种违反可交换性的系统初始状态：
 \begin{itemize}
-	\item ${c0.c == 1}$ \\
+	\item ${c1.c == 1}$ \\
 		先减后加对象被释放，先加后减没有变化
-	\item ${c0.c ==
+	\item ${c1.c ==
 		0x7FFFFFFF}$ \\
 		先加一后整数溢出，对象被错误释放，先减一没有问题
 \end{itemize}
@@ -235,7 +235,7 @@ Commuter\cite{commuter:2013}提出了一种对``可交换性原理''的构造性
 > 2$的情况可以类似推导。
 
 设$F_0(\boldsymbol{x}_0)$和$F_1(\boldsymbol{x}_1)$为两个待求可交换性的模型函数，$\boldsymbol{x}_i$为参数列表，返回值为$f_i$。
-系统初始状态为$\sigma_0$，写为Hoare Logic\cite{Hoare:ABC:363235.363259}的形式：
+系统初始状态为$\sigma_0$，写为Hoare Logic\cite{Hoare:1969:ABC:363235.363259}的形式：
 
 \begin{equation}
 \label{eq:hoare1}
@@ -317,6 +317,6 @@ logic的一些特殊情况，学界已经提出了相关的判定过程。例如
 Conjuction的合取式。使用此算法，可以在Z3等求解器之上建立Heap变量、链表求解支持，实现复杂操作系统接口模型的推导。
 
 \section{小结}
-本章对文章\cite{commuter:2013}中提出的Commuter做扩展，实现了简化的Posix虚拟内存管理子系统模型。另一方面，提出了使用KLEE符号执行器求解系统调用可交换约束的方法。
+本章扩展了文章\cite{commuter:2013}中提出的Commuter，实现了简化的Posix虚拟内存管理子系统模型。另一方面，提出了一种新方法，即使用KLEE符号执行器求解系统调用可交换约束。
 最后讨论了现有符号执行器在操作系统模型求解上的不足，提出结合Separation
 Logic和符号执行技术解决操作系统中共享数据结构求解的可能方案。

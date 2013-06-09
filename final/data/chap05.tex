@@ -32,13 +32,12 @@ QProf\footnote{https://github.com/chyh1990/qemu/tree/1.3-profiler}，本系统�
 由于真实操作系统工作环境的复杂性，很难通过分析源代码等静态分析方法发现内核中的性能问题。
 本全系统性能测试工具通过动态分析的方法，在内核运行过程中允许程序员方便地对操作系统内核的各个函数进行跟踪和计时。通过这些信息，可以较为容易地发现内核的运行的关键路径
 （也正是内核代码的瓶颈所在），并发现潜在的性能问题。
-真实应用上的测试结果第\ref{cha:test}章。
 
 \section{QEMU模拟器架构分析}
 
 QEMU\cite{Bellard:2005:QFP:1247360.1247401}是一个可移植的基于动态二进制翻译技术的硬件模拟器。QEMU可以模拟包括x86、PowerPC、ARM等多种CPU，并支持全系统硬件模拟，可以在这个模拟平台上运行Windows、Linux等多种操作系统。另外，在x86平台上，QEMU也支持KVM硬件虚拟化后端，大大提高了模拟器的执行性能。为了保证采样的正确性，现在QProf不支持KVM硬件虚拟化技术，但通过简单扩展可以方便实现。这里只对QEMU的软件动态二进制执行部分作讨论。
 
-\begin{figure}
+\begin{figure}[ht]
 \centering
 \begin{tikzpicture}
 
@@ -76,10 +75,9 @@ QEMU\cite{Bellard:2005:QFP:1247360.1247401}是一个可移植的基于动态二�
 
     \end{pgfonlayer}
 
-
 \end{tikzpicture}
+\caption[QEMU模拟器系统架构]{QEMU模拟器系统架构}
 \label{fig:qemu-arch}
-\caption{QEMU模拟器系统架构}
 \end{figure}
 
 QEMU系统的架构见图\ref{fig:qemu-arch}，其中的Tiny Code
@@ -113,7 +111,9 @@ MSR控制寄存器的控制指令，实现被测试操作系统内核（Guest Co
 \end{lstlisting}
 
 		\item 在内核中实现mcount函数，加入一条对Supervisor（QEMU）
-			回调指令。在QProf中，使用如下汇编代表做回调：
+			回调指令。在QProf中，被测系统使用如下汇编代码做回调：
+\begin{Code}
+
 \begin{lstlisting}[caption=QProf中mcount函数实现]
         movq    56(%rsp),%rsi
         /* Get frompc via the frame pointer.*/
@@ -122,9 +122,14 @@ MSR控制寄存器的控制指令，实现被测试操作系统内核（Guest Co
         mov     $MAGIC_ECX, %ecx
         wrmsr
 \end{lstlisting}
-		\item 修改QEMU，对Supervisor的回调进行响应，生成调用图；
+\end{Code}
+		\item
+		使用QProf中的QEMU运行被测操作系统内核。QProf先分析被执行操作系统内核的ELF镜像格式，提取必要的地址信息；
+		\item 被测系统开始运行，Qprof响应回调被测系统的回调，生成调用图；
 		\item QEMU中使用时钟信号定时采样，对内核做profile。
 	\end{itemize}
 
 \section{小结}
 
+本小结介绍了QEMU的基本架构和基于QEMU的全系统性能测试工具QProf实现原理和相关细节。
+QProf在真实应用上的测试结果见第\ref{cha:test}章。
