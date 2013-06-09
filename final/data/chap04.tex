@@ -1,7 +1,6 @@
 
-\chapter{多核操作系统和性能测试工具的实现}
-在上一章多核操作系统可扩展性理论的基础上，本章将介绍在清华uCore实验操作系统的基础上加入对最新NUMA的多核处理器的支持，并用数种多核可扩展的数据结构和算法改造其内核数据结构。本章还介绍了本毕设设计了新型性能测试工具QProf的原理。
-
+\chapter{多核操作系统关键模块设计实现}
+在上一章多核操作系统可扩展性理论的基础上，本章将介绍在清华uCore实验操作系统的基础上加入对最新NUMA的多核处理器的支持，并用数种多核可扩展的数据结构和算法改造其内核数据结构。
 \section{uCore多核硬件抽象层}
 uCore是清华大学研发的一个硬件平台的、遵循简化Posix标准的实验操作系统。在部分硬件平台（如ARM）上，uCore对uclibc和
 bionic
@@ -395,47 +394,8 @@ Austin等人\cite{radixvm:eurosys13}提出的Refcache计数器主要有如下四
 
 
 
-\section{基于QEMU的全系统性能采集工具QPROF}
-为了在模拟器中方便地寻找操作系统内核的瓶颈，本毕设这种方法结合了Qemu和gprof的两个开源软件，实现了一个全系统的Profiler
-\pozhehao
-QProf\footnote{https://github.com/chyh1990/qemu/tree/1.3-profiler}。
-
-由于真实操作系统工作环境的复杂性，很难通过分析源代码等静态分析方法发现内核中的性能问题。
-本全系统性能测试工具通过动态分析的方法，在内核运行过程中允许程序员方便地对操作系统内核的各个函数进行跟踪和计时。通过这些信息，可以较为容易地发现内核的运行的关键路径
-（也正是内核代码的瓶颈所在），并发现潜在的性能问题。
-真实应用上的测试结果第\ref{cha:test}章。
-
-\subsection{QProf原理}
-	目前，对程序做性能测试的方法主要有两种：
-	\begin{enumerate}
-		\item {\heiti 插桩法}
-			在程序编写、编译或链接（包括动态链接）的过程中，注入跟踪代码；
-		\item {\heiti 采样法}
-			系统中定时产生时钟中断时间，打断程序运行，采集当前程序计数器值（Program
-			Counter）。通过采样点的分布，估计各个函数运行时间。
-	\end{enumerate}
-
-	QProf系统结合了上述两种方法对操作系统内核进行性能测试。它与传统用户态性能测试工具的主要区别是，QProf使用Qemu作为运行环境，可以跟踪CPU的底层状态。使用模拟器的跟踪操作系统内核性能情况的一个问题是，Qemu中使用软件模拟外设硬件的行为，如果操作系统的真正瓶颈在IO操作上（而非算法），则QProf难以直接发现真实的性能瓶颈。但是通过QProf采集的函数调用次数等其他信息，开发者可以分析和推测系统的问题所在。 QProf的主要原理如下所示：
-	\begin{itemize}
-		\item 编译内核时加入-pg参数，GCC会在所有
-			函数的prolog中插入一个mcount函数调用，
-			用于跟踪函数调用图（Call graph）
-		\item 在内核中实现mcount函数，加入一条对Supervisor（QEMU）
-			回调指令。在QProf中，使用如下汇编代表做回调：
-\begin{lstlisting}
-        movq    56(%rsp),%rsi
-        /* Get frompc via the frame pointer.*/
-        movq    8(%rbp),%rdi
-        /* call the hypervisor */
-        mov     $MAGIC_ECX, %ecx
-        wrmsr
-\end{lstlisting}
-		\item 修改QEMU，对Supervisor的回调进行响应，生成调用图。
-			并定时采样，做profile。
-	\end{itemize}
-
 \section{小结}
 
 本节介绍了uCore多核平台硬件抽象层的架构与AMD64
 NUMA平台上硬件相关代码的实现。在此基础之上，
-实现了无锁堆栈、Refcache等多核可扩展的数据结构。最后，介绍了基于QEMU的性能测试工具QProf的设计。
+实现了无锁堆栈、Refcache等多核可扩展的数据结构。

@@ -1,230 +1,130 @@
 
-\chapter{系统测试与分析}
-\label{cha:test}
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
 
 
-\section{虚拟内存子系统模型求解结果}
-\label{sec:vm-result}
-对\ref{sec:vm-model}一节所述的虚拟内存子系统模型，使用相关算法进行交换性求解，生成的可交换测试用例数目如表\ref{tab:commute-stat}所示。
+\chapter{操作系统性能分析工具设计实现}
 
-\begin{table}[ht]
-  \centering
-  \caption{可交换用例求解结果统计}
-  \label{tab:commute-stat}
-    \begin{tabular*}{0.6\linewidth}{ll|c}
-      \toprule[1.5pt]
-      {\heiti 系统接口1} & {\heiti 系统接口2} & {\heiti 可交换测试用例数} \\\midrule[1pt]
-mmap & mmap & 36             \\
-mmap & munmap & 18           \\
-mmap & pgfault\_read & 24     \\
-mmap & pgfault\_write & 24    \\
-munmap & munmap & 9          \\
-munmap & pgfault\_read & 12   \\
-munmap & pgfault\_write & 12  \\
-      \bottomrule[1.5pt]
-    \end{tabular*}
-\end{table}
-
-分析求解结果可以发现，造成这组系统调用不可交换的原因主要是涉及重叠虚拟地址的操作，如先后用不同参数mmap同一个虚拟地址。根据``可交换性原理''，对于不涉及重叠区域的虚拟地址映射操作，存在一种多核可扩展的mmap/munmap实现。事实上，学术界已经提出了RCU平衡树\cite{Clements:2012:SAS:2189750.2150998}和RadixVM\cite{radixvm:eurosys13}等数据结构优化虚拟内存子系统的多核可扩展性。
-
-
-\section{uCore系统启动测试}
-uCore多核操作系统内核可以运行在QEMU软件模拟器、KVM硬件虚拟化平台和Intel真实机器。
-图\ref{fig:ucore-init}和图\ref{fig:ucore-normal}是uCore在此KVM硬件虚拟化平台
-（两个NUMA节点，8个CPU核）上的运行情况。
-
-\begin{figure}[ht]
-\begin{minipage}{0.48\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{figures/ucore_init.png}
-  \caption{KVM中启动情况}
-  \label{fig:ucore-init}
-\end{minipage}\hfill
-\begin{minipage}{0.48\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{figures/ucore_normal.png}
-  \caption{多核系统上正常运行}
-  \label{fig:ucore-normal}
-\end{minipage}
-\end{figure}
-
-在图\ref{fig:ucore-init}中可以看出，uCore在KVM中正确读取硬件固件中的ACPI信息表，并检测出NUMA节点上的CPU和内存信息。BSP初始化内核完成后，唤醒余下AP，最后把控制交给用户态程序，系统运行正常。
-
-为了方便地在AMD64硬件平台上调试，本毕设在uCore中加入了Grub2引导系统支持，可以方便地使用PXE和Grub2无盘网络启动uCore。下面的为uCore在一台Intel
-Core
-4核机器上的启动日志，可以发现真实机器上可能缺少某些ACPI表项，因此在操作系统的初始化过程中必须为这些配置信息设定适当的默认值，确保系统正常启动。
-
-{\tiny
-	\begin{Verbatim}[frame=single]
-(THU.CST) os is loading ...
-
-Multiboot dectected: param 0x10000
-mbmod: 0 0x29e000 0x69e000
-acpitables_init()
-ACPI: RSDP 0xf6d00 00014 (v0 GBT   )
-ACPI: RSDT 0x7dce3040 0003c (v1 GBT    GBTUACPI 42302e31 GBTU 01010101)
-ACPI: FACP 0x7dce30c0 00074 (v1 GBT    GBTUACPI 42302e31 GBTU 01010101)
-ACPI: DSDT 0x7dce3180 042d4 (v1 GBT    GBTUACPI 00001000 MSFT 0100000c)
-ACPI: FACS 0x7dce0000 00040
-ACPI: HPET 0x7dce75c0 00038 (v1 GBT    GBTUACPI 42302e31 GBTU 00000098)
-ACPI: MCFG 0x7dce7640 0003c (v1 GBT    GBTUACPI 42302e31 GBTU 01010101)
-ACPI: TAMG 0x7dce7680 0644a (v1 GBT    GBT   B0 5455312e BG?? 00020101)
-ACPI: APIC 0x7dce74c0 00084 (v1 GBT    GBTUACPI 42302e31 GBTU 01010101)
-ACPI: SSDT 0x7dcee3f0 003ab (v1  PmRef    CpuPm 00003000 INTL 20040311)
-xapic_init_once: xapic base 0xffff8000fee00000
-xapic_lapic_init: Using xapic LAPIC
-xapic: Initializing LAPIC (CPU 0)
-cpumap_init: bootcpu apicid: 0
-  CPU 0: to LAPIC 0
-  CPU 1: to LAPIC 1
-  CPU 2: to LAPIC 3
-  CPU 3: to LAPIC 2
-numa_init: SRAT not found! Assuming one NUMA node
-memory management: buddy_pmm_manager
-e820map: size, begin, end, type
-----------------------------------------
-  memory: 000000000009f800, [0000000000000000, 000000000009f7ff], Usable.
-  memory: 0000000000000800, [000000000009f800, 000000000009ffff], Reserved.
-  memory: 0000000000010000, [00000000000f0000, 00000000000fffff], Reserved.
-  memory: 000000007dbe0000, [0000000000100000, 000000007dcdffff], Usable.
-  memory: 0000000000003000, [000000007dce0000, 000000007dce2fff], ACPI NVS memory.
-  memory: 000000000000d000, [000000007dce3000, 000000007dceffff], ACPI reclaimable memory.
-  memory: 0000000000010000, [000000007dcf0000, 000000007dcfffff], Reserved.
-  memory: 0000000010000000, [00000000d0000000, 00000000dfffffff], Reserved.
-  memory: 0000000001400000, [00000000fec00000, 00000000ffffffff], Reserved.
---------Total Usable Phy Mem Size 2012 MB-----------
-numa_mem_zone 0: 0x0000000002612000 - 0x000000007b6cdfff, 1974MB
-	\end{Verbatim}
-}
-
-编写同时支持真实机器和模拟器的uCore内核是重要的，因为两种运行环境都有各自的优势和不足
-
-\section{多核支持测试}
-为了测试多核uCore对系统CPU核的使用情况，本毕设编写了一个简单的并行矩阵乘法用户态程序matrix。默认情况下，此程序将使用系统中所有可用CPU内核经行计算\footnote{测试环境：Intel
-i5 3.0GHz, 4核机器}。表\ref{tab:mp-matrix}是本程序在不同CPU核数上运行时间的测试结果，可见运行时间大致与核数成反比关系，与理论分析一致。
-
-\begin{table}[ht]
-  \centering
-  \caption{uCore多核测试}
-  \label{tab:mp-matrix}
-    \begin{tabular*}{0.6\linewidth}{c|ll}
-      \toprule[1.5pt]
-      {\heiti CPU核数} & {\heiti 用时/秒} \\\midrule[1pt]
-      1 & 13.70  \\
-      2 & 7.40  \\
-      4 & 4.00   \\
-      \bottomrule[1.5pt]
-    \end{tabular*}
-\end{table}
-
-
-
-\section{可扩展引用计数器测试与分析}
-在四核机器上，使用7个内核线程（另外一个主线程控制测试）对引用计数器进行测试。原子操作指令和Cache竞争是造成引用计数器可扩展性问题的根源，表\ref{tab:refcache-stat}比较了使用普通原子操作和Refcache对内存总线加锁的次数。
-
-\begin{table}[ht]
-  \centering
-  \caption[Refcache性能对比]{普通原子操作和Refcache对内存总线加锁的次数对比（$flush\_time =
-  10ms$）}
-  \label{tab:refcache-stat}
-    \begin{tabular*}{0.6\linewidth}{c|ll}
-      \toprule[1.5pt]
-      {\heiti $dec/inc$次数} & {\heiti Atomic} & {\heiti Refcache}  \\\midrule[1pt]
-	30  & 30   & 8	 \\
-	44  & 44   & 8   \\
-	58  & 58   & 10  \\
-	72  & 72   & 12  \\
-	86  & 86   & 14  \\
-	100  & 100   & 16  \\
-	114 & 114  & 18  \\
-	128 & 128  & 20  \\
-	142 & 142  & 20  \\
-	226 & 226  & 20  \\
-	240 & 240  & 22  \\
-	254 & 254  & 22  \\
-	268 & 268  & 22  \\
-      \bottomrule[1.5pt]
-    \end{tabular*}
-\end{table}
-
-\begin{figure}[ht]
-\begin{minipage}{0.48\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{figures/refcache1.pdf}
-\end{minipage}\hfill
-\begin{minipage}{0.48\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{figures/refcache2.pdf}
-\end{minipage}
-\caption{Refcache性能对比}
-\label{fig:rc-cmp}
-\end{figure}
-
-由图\ref{fig:rc-cmp}测试结果可以看出，Refcache的全局同步次数成阶梯状方便，这是因为Refcache在多数情况下只在时钟中断到来是发起全局同步操作，并判断对象引用次数是否为0。Refcache使用CPU本地缓存吸收了大量inc和dec操作，更新全局计数器的次数大大减少。因而Refcache比使用一般原子操作在多核系统上有更好的可扩展性表现。
-
-\section{QProf测试}
-为了使用本测试系统，必须使用修改过的Qemu软件模拟器运行内核：
+无论在程序的开发还是真实使用的过程中，发现和调试系统中出现的性能问题都是至关重要的。用户程序的性能优化迭代流程一般是这样的：
 \begin{enumerate}
-	\item 首先，在编译内核时加上-pg参数；
-	\item
-		使用修改过的Qemu，使用下面的命令行参数运行uCore或其他操作系统内核：
-		\begin{lstlisting}[language=sh]
-qemu-system-x86_64 -no-kvm -m 512 -hda \
-obj/kernel.img -profileelf kernel-amd64.elf
-		\end{lstlisting}
-
-		并在操作系统中运行微测试应用程序；
-	\item
-		内核运行结束，Qemu退出后将生成kgmon.out文件，可以使用标准的gprof工具解析：
-		\begin{lstlisting}[language=sh]
-gprof obj/kernel/kernel-amd64.elf kgmon.out
-		\end{lstlisting}
-
+\item 使用性能采集工具（如GProf、Intel VTune等）对目标程序进行测试；
+\item 通过测试结果，分析软件运行的关键路径，找到性能瓶颈；
+\item 对关键路径上的数据结构和算法做优化，如效果不理想跳到1；
+\item
+当数据结构和算法都优化到最优状态后，进行体系结构相关优化，如Cache使用优化、使用内联汇编等。在此期间不断测试。
 \end{enumerate}
 
-	例如，本毕设使用QProf寻找uCore中readdir系统调用运行缓慢的原因。在uCore上多次运行使用
-	\emph{ls}命令列出目录，并使用QProf记录系统性能信息：
-	{\tiny
-	\begin{Verbatim}[frame=single]
-Flat profile:
+从上述的软件优化流程可以看到，性能采集工具在优化过程中占有至关重要的作用。为此，开源软件界和工业界都开发了大量用户态性能测试工具，如开源的gprof和perf工具，和商用的Intel
+VTune等。但是对于操作系统内核的有效性能分析工具却不多。虽然在Linux内核中集成了perf和ftrace性能分析子系统，这些工具都存在一些问题。最明显的是，它们与Linux内核耦合度太强，无法单独使用，因此无法对xv6、uCore等实验操作系统做性能测试。另外，这些工具运行在与内核相同的特权级别上，不能检测到系统内核的所有行为。为此，本毕设设计了基于QEMU的全系统性能采集工具QProf。本章将主要介绍QProf的工作原理。
 
-Each sample counts as 0.01 seconds.
-  %   cumulative   self              self     total
- time   seconds   seconds    calls  ms/call  ms/call  name
- 25.62      0.52     0.52     8654     0.06     0.06  ide_wait_ready
-  8.87      0.70     0.18      960     0.19     0.75  ide_read_secs
-  8.37      0.87     0.17                             do_halt
-  4.43      0.96     0.09     1195     0.08     0.08  memmove
-  4.19      1.05     0.09   135219     0.00     0.00  get_pte
-  2.96      1.11     0.06     7908     0.01     0.01  serial_putc_sub
-  2.71      1.16     0.06   135268     0.00     0.00  get_pmd
-  1.97      1.20     0.04   433010     0.00     0.00  ptep_present
-  1.97      1.24     0.04      673     0.06     0.06  memset
-	\end{Verbatim}
-	}
+\section{概述}
+为了在模拟器中方便地寻找操作系统内核的瓶颈，本毕设这种方法结合了Qemu和gprof的两个开源软件，实现了一个全系统的Profiler
+\pozhehao
+QProf\footnote{https://github.com/chyh1990/qemu/tree/1.3-profiler}，本系统具有以下特征：
+\begin{itemize}
+\item 通过模拟器，运行在比操作系统内核更高的级别上；
+\item 使用了编译器的相关特性，不需对内核源代码做任何修改；
+\item 生成与gprof兼容的测试报告，方便后期分析处理。
+\end{itemize}
 
-	通过QProf也可以获得内核的函数调用图：
+由于真实操作系统工作环境的复杂性，很难通过分析源代码等静态分析方法发现内核中的性能问题。
+本全系统性能测试工具通过动态分析的方法，在内核运行过程中允许程序员方便地对操作系统内核的各个函数进行跟踪和计时。通过这些信息，可以较为容易地发现内核的运行的关键路径
+（也正是内核代码的瓶颈所在），并发现潜在的性能问题。
+真实应用上的测试结果第\ref{cha:test}章。
 
-	{\tiny
-	\begin{Verbatim}[frame=single]
-granularity: each sample hit covers 2 byte(s) for 0.49% of 2.03 seconds
+\section{QEMU模拟器架构分析}
 
-index % time    self  children    called     name
-                0.00    1.25    4377/4377        __alltraps [2]
-[1]     61.4    0.00    1.25    4377         trap [1]
-                0.00    1.24    4377/4377        trap_dispatch [3]
-                0.01    0.00   26695/26889       mycpu [157]
-                0.00    0.00    8746/8755        trap_in_kernel [365]
-                0.00    0.00    4362/4362        kern_enter [376]
-                0.00    0.00    4355/4362        kern_leave [377]
-                0.00    0.00    4278/4285        may_killed [379]
-                0.00    0.00      79/117         schedule [429]
-	\end{Verbatim}
-	}
+QEMU\cite{Bellard:2005:QFP:1247360.1247401}是一个可移植的基于动态二进制翻译技术的硬件模拟器。QEMU可以模拟包括x86、PowerPC、ARM等多种CPU，并支持全系统硬件模拟，可以在这个模拟平台上运行Windows、Linux等多种操作系统。另外，在x86平台上，QEMU也支持KVM硬件虚拟化后端，大大提高了模拟器的执行性能。为了保证采样的正确性，现在QProf不支持KVM硬件虚拟化技术，但通过简单扩展可以方便实现。这里只对QEMU的软件动态二进制执行部分作讨论。
 
-	通过上述数据，开发者可以发现ide\_wait\_ready和ide\_read\_secs运行次数非常多，
-两个函数耗时约占系统运行总时间的35\%。进一步分析可以发现，uCore虚拟文件系统（Virtual
-Filesystem，VFS）中没有实现类似Linux的Page
-Cache机制和IO调度机制，在执行ls命令时，内核需要多次读取磁盘上不连续的扇区，导致磁盘IO
-性能问题。
+\begin{figure}
+\centering
+\begin{tikzpicture}
+
+\tikzstyle{vecArrow} = [thick, decoration={markings,mark=at position
+   1 with {\arrow[semithick]{open triangle 60}}},
+   double distance=1.4pt, shorten >= 5.5pt,
+   preaction = {decorate},
+   postaction = {draw,line width=1.4pt, white,shorten >= 4.5pt}]
+
+\tikzstyle{comp}=[draw, fill=blue!20, text width=4em, 
+    text centered, minimum height=2.5em,drop shadow,node distance=5em]
+
+\node[draw,comp] (a) {Guest};
+\node[draw,comp,below of=a] (b) {QEMU};
+\node[draw,comp,below of=b] (c) {Host};
+
+\node[draw,comp,right of=b,node distance=6em] (gc) {Guest Code};
+\node[draw,comp,right of=gc,node distance=6em] (tcg) {TCG};
+\node[draw,comp,right of=tcg,node distance=6em] (target) {TCG target};
+
+\draw[vecArrow] (a) to (b);
+\draw[vecArrow] (b) to (c);
+
+\draw[vecArrow] (gc) to (tcg);
+\draw[vecArrow] (tcg) to (target);
+
+\path [draw,-latex',dashed] (target) |- (c);
+
+    \begin{pgfonlayer}{background}
+        \path (b.west |- b.north)+(-0.5,0.3) node (a) {};
+        \path (target.east |- target.south)+(+0.5,-0.3) node (c) {};
+
+        \path[fill=yellow!20,rounded corners, draw=black!50, dashed]
+            (a) rectangle (c);
+
+    \end{pgfonlayer}
+
+
+\end{tikzpicture}
+\label{fig:qemu-arch}
+\caption{QEMU模拟器系统架构}
+\end{figure}
+
+QEMU系统的架构见图\ref{fig:qemu-arch}，其中的Tiny Code
+Generator（TCG）是QEMU系统的核心，它把Guest的CPU指令翻译为QEMU内部的中间表示。对于普通指令，QEMU中有通用的指令实现代码。当遇到操作系统中的特权指令和涉及到协处理器、MMU操作等硬件相关指令时，QEMU将回调特定的Helper函数软件模拟硬件的行为。QProf使用这项特性，添加了一条AMD64
+MSR控制寄存器的控制指令，实现被测试操作系统内核（Guest Code）对QEMU的回调。
+
+另一方面，从QEMU的架构图中可以看出，QEMU工作在比被测试操作系统更高级的位置上。通过对QEMU进行修改，QProf可以准确地获得被测系统的全部状态。
+
+\section{QProf工作原理}
+	目前，对程序做性能测试的方法主要有两种：
+	\begin{enumerate}
+		\item {\heiti 插桩法}
+			在程序编写、编译或链接（包括动态链接）的过程中，注入跟踪代码；
+		\item {\heiti 采样法}
+			系统中定时产生时钟中断时间，打断程序运行，采集当前程序计数器值（Program
+			Counter）。通过采样点的分布，估计各个函数运行时间。
+	\end{enumerate}
+
+	QProf系统结合了上述两种方法对操作系统内核进行性能测试。它与传统用户态性能测试工具的主要区别是，QProf使用Qemu作为运行环境，可以跟踪CPU的底层状态。使用模拟器的跟踪操作系统内核性能情况的一个问题是，Qemu中使用软件模拟外设硬件的行为，如果操作系统的真正瓶颈在IO操作上（而非算法），则QProf难以直接发现真实的性能瓶颈。但是通过QProf采集的函数调用次数等其他信息，开发者可以分析和推测系统的问题所在。 QProf的主要原理如下所示：
+	\begin{itemize}
+		\item 编译内核时加入-pg参数，GCC会在所有
+			函数的prolog中插入一个mcount函数调用，
+			用于跟踪函数调用图（Call graph）：
+\begin{lstlisting}[language={[x86masm]Assembler}, caption=加入-pg编译参数后的函数序言]
+<x2_cpu_init>:                                                 
+	55                      push   %rbp                     
+	48 89 e5                mov    %rsp,%rbp                
+	48 83 ec 10             sub    $0x10,%rsp               
+	e8 93 23 fb ff          callq  ffff80000022ce24 <mcount>
+	48 89 7d f8             mov    %rdi,-0x8(%rbp)          
+\end{lstlisting}
+
+		\item 在内核中实现mcount函数，加入一条对Supervisor（QEMU）
+			回调指令。在QProf中，使用如下汇编代表做回调：
+\begin{lstlisting}[caption=QProf中mcount函数实现]
+        movq    56(%rsp),%rsi
+        /* Get frompc via the frame pointer.*/
+        movq    8(%rbp),%rdi
+        /* call the hypervisor */
+        mov     $MAGIC_ECX, %ecx
+        wrmsr
+\end{lstlisting}
+		\item 修改QEMU，对Supervisor的回调进行响应，生成调用图；
+		\item QEMU中使用时钟信号定时采样，对内核做profile。
+	\end{itemize}
+
+\section{小结}
 
