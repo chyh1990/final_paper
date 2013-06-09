@@ -64,7 +64,7 @@ System}
 \begin{cabstract}
 	随着微电子技术的迅猛发展，AMD64多核架构已经广泛应用到服务器、高性能计算等领域。各个芯片厂商不断推出新的微处理器产品，32核以上的基于AMD64多核架构的硬件平台对操作系统内核的多核可扩展性性能提出了越来越高的要求。如何使用新方法提高操作系统内核的多核可扩展性性能，已经成为备受内核开发者和操作系统研究者关注的重要课题，具有较高的研究价值和现实意义。
 
-	本文对研究了现有开源操作系统Linux虚拟内存管理系统的多核竞争瓶颈进行了研究，提出了一种对对象引用计数器和操作系统虚拟内存管理子系统的建模方法。并进一步提出了结合KLEE和可交换性原理求解操作系统模型中可扩展实现存在条件的新方法。在此理论基础上，本文实现了一个支持AMD64
+	本文对研究了现有开源操作系统Linux虚拟内存管理系统的多核竞争瓶颈进行了研究，提出了一种针对对象引用计数器和简化Posix标准的操作系统虚拟内存管理子系统的建模方法。并进一步提出了结合KLEE符号执行引擎和可交换性原理求解操作系统模型中可扩展实现存在条件的新方法。在此理论基础上，本文实现了一个支持AMD64
 	NUMA多核架构的小型操作系统内核。最后实现了一款基于QEMU模拟器的全系统性能分析工具QProf，用于方便地测试操作系统内核性能。
 
 \end{cabstract}
@@ -72,25 +72,15 @@ System}
 \ckeywords{操作系统, 符号执行, 多核可扩展性}
 
 \begin{eabstract} 
-TODO
-
-   An abstract of a dissertation is a summary and extraction of research work
-   and contributions. Included in an abstract should be description of research
-   topic and research objective, brief introduction to methodology and research
-   process, and summarization of conclusion and contributions of the
-   research. An abstract should be characterized by independence and clarity and
-   carry identical information with the dissertation. It should be such that the
-   general idea and major contributions of the dissertation are conveyed without
-   reading the dissertation. 
-
-   An abstract should be concise and to the point. It is a misunderstanding to
-   make an abstract an outline of the dissertation and words ``the first
-   chapter'', ``the second chapter'' and the like should be avoided in the
-   abstract.
-
-   Key words are terms used in a dissertation for indexing, reflecting core
-   information of the dissertation. An abstract may contain a maximum of 5 key
-   words, with semi-colons used in between to separate one another.
+	
+	As the development of microelectronic technology, AMD64 multicore multiprocessor architecture has been widely used in the fields of servers, high performance
+	computing and etc. Many processor manufacturers release their new chips every year, and multicore scalability on hardware systems containing more than 32 x86 cores has become a big challenge to the operating system developers. Currently,  designing new mechanism to improve the multicore scalability is an attractive 
+	topic in both industry and academia.
+	
+	This paper analyzes the scalability bottleneck in the virtual memory subsystem of Linux, and propose models of reference counter and virtual memory management
+	subsystem conforming to a simplified Posix specification. Furthermore, we combines KLEE symbolic execution engine and the commutativity rule 
+	to prove the existence of multicore scalable implementations of system interfaces. Based on the theory, we implements a modern operating system kernel supporting
+	AMD64 NUMA multicore  architecture. Finally, a QEMU-based full system profiler QProf is developed to find potential performance problems in the kernel.
 \end{eabstract}
 
-\ekeywords{\TeX, \LaTeX, CJK, template, thesis}
+\ekeywords{Operating System, Symbolic Execution, Scalability}

@@ -196,7 +196,7 @@ mutable)，如fork系统调用对物理页的写时复制（Copy-on-Write）策�
 
 下面我们以操作系统中虚拟内存管理(Virtual Memory)子系统为例，介绍简化的Posix系统调用API接口和中断处理例程的建模方法。
 在OS的虚拟内存管理子系统中，有两个最重要的系统调用：mmap和munmap。与文件系统建模不同的是，为了相对完整地描述虚拟内存子系统的行为，模型中还必须包括VM子系统对缺页异常（pagefault
-handler）的处理例程。[XXX 如何扩展论述？]
+handler）的处理例程。
 
 对于内存管理子系统，我们把操作系统对程序的接口分成两类：
 \begin{enumerate}
