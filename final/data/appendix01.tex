@@ -3,14 +3,13 @@
 %%% TeX-master: "../main"
 %%% End: 
 
-\chapter{外文资料的调研阅读报告或书面翻译}
-\section{RadixVM论文翻译（节选）}
-RadixVM: Scalable address spaces for multithreaded applications 
+\chapter{外文资料书面翻译}
 
-Austin T. Clements, M. Frans Kaashoek, and Nickolai Zeldovich
+\begin{center}
+RadixVM: Scalable address spaces for multithreaded applications
+\end{center}
 
-
-\subsection{摘要}
+\section{摘要}
 
 RadixVM是一个新的虚拟内存管理系统(Virtual
 Memory)的设计，使得在硬件保证Cache一致性的多核计算机系统上，多线程程序共享地址空间操作可以完全并发地经行。现在，大多数操作系统中mmap和munmap都是串行经行，这迫使程序员把他们的多线程程序分割成多个多进程程序，或者保留分配后的内存以避免返回这些内存到操作系统造成的额外性能损耗。RadixVM系统通过保证对不重叠虚拟地址空间操作的完全可扩展性，把开发者从这些繁杂的优化任务中解脱出来。
@@ -22,7 +21,7 @@ shootdown）策略，避免不必要的核间通信。
 我们在80核的机器上经行了实验，发现RadixVM系统在非重叠虚拟内存区域中达到了完美可扩展。换言之，如果多个线程并行地地经行mmap和munmap系统调用，这些调用可以完全独立运行，并且不会带来Cache一致性协议造成的多核通讯流量。
 
 
-\subsection{介绍}
+\section{介绍}
 在多核处理器系统上，多线程程序的性能瓶颈可能会发生操作系统中虚拟内存子系统的锁竞争上。虚拟内存子系统为了保证数据结构的复杂一致性，多数被广泛使用的内核，例如Linux和FreeBSD，都对每个共享地址空间（进程的VMA结构）加上了一把大锁。
 近年来的研究已经发现了一些让缺页处理程序（page fault
 handler）和mmap/munmap系统调用（用于从操作系统分配和释放内存）并行执行的方法。但是，如果mmap和munmap操作涉及的虚拟地址空间不重叠（例如内存分配和释放的场景下），理论上这些系统调用可以完美地并行化。这篇文章主要贡献就是在虚拟内存子系统中达到了这个目标。
@@ -54,7 +53,7 @@ list），但是跳表的内部节点会造成Cache Line竞争，限制了它的
 在xv6上，而不是Linux上实现RadixVM的一个缺点是xv6无法运行复杂的大型应用，如Oracle的Java虚拟机中的垃圾回收器。另一方面，RadixVM面临着一个蛋鸡问题：很多VM受限应用已经使用一些技巧来避免传统VM系统的扩展性问题。作为结果，我们的实验使用微型测例来做测试。
 
 
-\subsection{设计}
+\section{设计}
 实现不同进程中的可扩展的VM操作很容易，因为每个进程涉及到不同的VMA结构。RadixVM的设计是新颖的，因为它允许同一进程的多个线程同时执行mmap/munmap或缺页的操作（对非重叠的内存区域）。也就是说，如果在同一进程中的n个线程分配内存，这些mmaps是完美可扩展的（每次操作花费同样的时间，不论n多大）。同样，如果一个线程在一个CPU核上分配内存，同一进程中的另一个线程在另一CPU核操作系统返回不同的内存区域，那么这些操作不减慢或干扰对方的任何的mmap操作。最后，如果一个CPU核心上正在运行访问缺页处理例程，而其他CPU核进行VM操作（不包括pagefault)，RadixVM也能达到完美可扩展性。另一方面，如果使用mmap和munmap对重叠内存区域进行操作，或者一个线程在mmaped或munmaped的页面上发生缺页，RadixVM将串行化那些操作。这种设计的可扩展性，可以容易地被应用程序开发人员了解和利用：应用程序只需要简单地避免对重叠内存区域并发操作。
 
 为了在现代多核计算机实现完美的可扩展性，RadixVM努力确保CPU核不发生任何Cache
@@ -65,7 +64,7 @@ Line的主节点上被串行化。
 
 本节介绍RadixVM如何达到非重叠区域的VM操作的完美可扩展。首先，我们提出三个关键数据结构，然后介绍如何使用这些数据结构来实现标准的VM操作。
 
-\subsubsection{使用Refcache来进行引用计数}
+\subsection{使用Refcache来进行引用计数}
 引用计数在很多操作系统中都非常关键，对RadixVM也一样，因为两个VM区域可能共享相同的物理页。例如Fork新进程时，RadixVM必须通过引用计数来计算需要释放的物理页。要做到这一点。RadixVM引用计数每一个物理页。但简单的引用计数器可能会导致可扩展性问题。因为多个线程将在计数变量上竞争。同样，RadixVM需要使用引用计数对Radix
 tree的节点确定它们何时为空。
 
@@ -84,7 +83,7 @@ Line竞争，而Refcache自身只需要以恒定速率修改Cache Line来维护�
 Cache定时被刷新到对象的全局引用计数中。真正的计数值一般是未知的，但我们假设，一旦它下降到零，它会保持为零（在弱引用的情况下，我们将在后面讨论）。
 Refcache依赖于真实计数为零后一直稳定到零的性质。
 
-\subsubsection{Radix tree}
+\subsection{Radix tree}
 本质上，一个地址空间是一个从虚拟地址到元数据和物理内存的映射。为了完美地实现可扩展的非重叠的地址空间操作，RadixVM需要一个数据结构，可以跟踪此映射和支持mmaping和munmaping，同时避免不相交的虚拟内存区域上的VM操作之间的争。
 
 避免竞争的一个方法是避免共享。例如，开发者定义把地址空间静态地分配到各个CPU核上，每个核各自管理自己的地址空间。这种方法保证了非重叠内存区域上的元数据访问不会发生冲突。这种方法的缺点在于它复杂化了数据共享，并且需要应用开发者感知这种划分。一个更好的解决方法是使用一些共享的数据结构，它允许多个线程对称地管理共享内存地址区域，这也是现在所有VM子系统的做法。
@@ -127,7 +126,7 @@ tree需要引入额外的竞争，但是与饥渴的垃圾回收方案相比，�
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\subsubsection{TLB shootdown}
+\subsection{TLB shootdown}
 
 实现多核可扩展mmap或munmap操作的难点之一是每个CPU核的硬件页转换高速缓存(TLB)，页面映射更改需要显式的通知（“TLB
 shootdowns”）其他CPU核。因为TLB
@@ -140,7 +139,7 @@ shootdown中断到所有使用相同的地址空间的CPU，这限制了VM系统
 这种方法最明显的缺点是需要额外的内存维护每个CPU核的页表。但这个开销是在实际应用程序的总内存占用小。但内存不足时，内核也可以通过共享共享页表或扔掉页表来可以减少开销。
 
 
-\subsection{讨论}
+\section{讨论}
 
 \begin{figure}[ht]
   \centering
@@ -151,12 +150,17 @@ shootdown中断到所有使用相同的地址空间的CPU，这限制了VM系统
 
 测试结果显示，RadixVM达到了对非重叠区域上VM操作随着CPU核数增加，完美可扩展的目标。RadixVM使用三种手段优化VM操作。有测试结果可以看出，在单核串行情况下RadixVM和Linux的性能差距在5\%以内，尽管RadixVM没有对单核情况做特殊优化。与预期一样，在多核情况下，RadixVM存储VMA元数据需要Linux两倍左右的内存。存储多核页表需要更多的内存（Metis测例下需要16倍的内存），但两种情况下，操作系统都只占内存总消耗的很小一部分。
 
-\subsection{结论}
+\section{结论}
 本文提出RadixVM，一个新的虚拟内存的设计，让VM密集型的多线程应用程序的性能可以达到良好的可扩展性。为了实现可扩展性，RadixVM采用三种技术：Radix
 tree数据结构，Refcache，有针对性的TLB
 shootdown。
 使用Metis的MapReduce库和微基准测试例程，获取了一系列常见的虚拟内存使用模式。测试显示，RadixVM实现了其目标。我们希望
 RadixVM的设计会激发其他的OS开发者向用户提供可扩展的虚拟内存操作原语，省却应用程序级别的解决方法。
+
+\begin{center}
+参考文献
+\end{center}
+[1]\hspace{15pt}Clements A T, Kaashoek M F, Zeldovich N. RadixVM: Scalable address spaces for multithreaded applications. Proceedings of Proceedings of the ACM EuroSys Conference (EuroSys 2013), Prague, Czech Republic, 2013
 
 
 \chapter{其它附录}
