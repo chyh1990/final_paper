@@ -5,7 +5,7 @@
 %%% End:
 %\secretlevel{绝密} \secretyear{2100}
 
-\ctitle{多核可扩展操作系统内核的实现与研究}
+\ctitle{多核可扩展操作系统内核关键技术的研究与实现}
 % 根据自己的情况选，不用这样复杂
 \makeatletter
 \ifthu@bachelor\relax\else
@@ -62,10 +62,15 @@ System}
 
 % 定义中英文摘要和关键字
 \begin{cabstract}
-	随着微电子技术的迅猛发展，AMD64多核架构已经广泛应用到服务器、高性能计算等领域。各个芯片厂商不断推出新的微处理器产品，32核以上的基于AMD64多核架构的硬件平台对操作系统内核的多核可扩展性性能提出了越来越高的要求。如何使用新方法提高操作系统内核的多核可扩展性性能，已经成为备受内核开发者和操作系统研究者关注的重要课题，具有较高的研究价值和现实意义。
 
-	本文对研究了现有开源操作系统Linux虚拟内存管理系统的多核竞争瓶颈进行了研究，提出了一种针对对象引用计数器和简化Posix标准的操作系统虚拟内存管理子系统的建模方法。并进一步提出了结合KLEE符号执行引擎和可交换性原理求解操作系统模型中可扩展实现存在条件的新方法。在此理论基础上，本文实现了一个支持AMD64
-	NUMA多核架构的小型操作系统内核。最后实现了一款基于QEMU模拟器的全系统性能分析工具QProf，用于方便地测试操作系统内核性能。
+随着多核架构计算机技术的迅猛发展，如何使用新方法提高操作系统内核的多核可扩展性性能,已经成
+为操作系统领域关注的重要课题,具有较高的研究价值和现实意义。
+本文的主要工作包括：对Linux 虚拟内存管理系统的多核竞争瓶颈问题和MIT提出的RadixVM相关多核优化技术
+进行了深入研究；基于RadixVM提出了一种针对对象引用计数器和简化 Posix 标准的操作系统虚
+拟内存管理子系统的建模方法，并在可交换性原理的基础上通过KLEE 符号执行引擎设计了
+求解操作系统模型中可扩展实现存在条件的方法；基于分析出的可扩展性存在条件设计实现了一个
+支持 AMD64 NUMA 多核架构的操作系统内核原型ucore-mp；实现了一款基于 QEMU 模拟器的全系统性能分析工具 QProf,用于方便地测试
+操作系统内核性能。实验结果表明，ucore-mp引用技术多核优化技术在多核硬件平台上比一般原子操作的扩展性性能加速比提高了73\%以上。
 
 \end{cabstract}
 
@@ -73,14 +78,12 @@ System}
 
 \begin{eabstract} 
 	
-	As the development of microelectronic technology, AMD64 multicore multiprocessor architecture has been widely used in the fields of servers, high performance
-	computing and etc. Many processor manufacturers release their new chips every year, and multicore scalability on hardware systems containing more than 32 x86 cores has become a big challenge to the operating system developers. Currently,  designing new mechanism to improve the multicore scalability is an attractive 
-	topic in both industry and academia.
-	
-	This paper analyzes the scalability bottleneck in the virtual memory subsystem of Linux, and propose models of reference counter and virtual memory management
-	subsystem conforming to a simplified Posix specification. Furthermore, we combines KLEE symbolic execution engine and the commutativity rule 
-	to prove the existence of multicore scalable implementations of system interfaces. Based on the theory, we develop a modern operating system kernel supporting
-	AMD64 NUMA multicore  architecture. Finally, a QEMU-based full system profiler QProf is developed to find potential performance problems in the kernel.
+	As the development of microelectronic technology, multicore scalability on hardware systems has become a big challenge to the operating system developers.  designing new mechanism to improve the multicore scalability is an attractive topic in both industry and academia.
+	This paper analyzes the scalability bottleneck in the virtual memory subsystem of Linux, and research into several optimization technology on multicore 
+	systems, such as RadixVM from MIT. Based on these technologies, we propose a modeling method for reference counter and
+	virtual memory subsystem conforming to a simplified Posix specification.  Furthermore, we combine KLEE symbolic execution engine and the commutativity rule 
+	to prove the existence of multicore scalable implementations of system interfaces. Based on the theory, we develop a modern operating system kernel ucore-mp on
+	AMD64 NUMA multicore  architecture. Finally, a QEMU-based full system profiler QProf is developed to find potential performance problems in the kernel. An Experimental evaluation shows s performance improvements of 73\% or more with ucore-mp reference counter implementation, compared to atomic operations.
 \end{eabstract}
 
 \ekeywords{Operating System, Symbolic Execution, Scalability}
