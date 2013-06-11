@@ -2,17 +2,17 @@
 \chapter{多核操作系统可扩展性分析与建模}
 
 本节将介绍在现代AMD64多核处理器上造成操作系统可扩展性瓶颈的原因，提出相关的建模和模型求解方法。
-值得注意的是本毕设只考虑由于多核CPU核间通讯开销造成的操作系统性能退化，
+值得注意的是本毕设只考虑由于多核处理器核间通讯开销造成的操作系统性能退化，
 以下讨论均假设系统中其他因素（如I/O操作）不会造成性能瓶颈。
 
 \section{操作系统多核可扩展瓶颈分析}
 
-在造成Linux等现有OS在16核以上多核系统上可扩展性问题的各种因素中，一个核心原因是CPU核间数据共享及其竞争。这种竞争体现在多个方面：
+在造成Linux等主流操作系统在多核系统上可扩展性问题的各种因素中，一个核心原因是处理器核间数据共享及其竞争。这种竞争体现在多个方面：
 
 \begin{itemize}
 \item 通过原子操作指令（x86中的Lock前缀）修改内核对象的引用计数
 （reference count）。由于在x86等体系结构中，一般由硬件保证各个核之间的Cache一致性，多个核上使用原子操作修改同一内存地址时，这将迫使
-CPU执行Snoop Protocal协议（如在Intel处理器中的QuickPath Interconnect）。在AMD和Intel处理器上Snoop Protocal的复杂度为$O(n)$\cite{intelquickpath}，
+CPU执行Snoop协议（如在Intel处理器中的QuickPath Interconnect）。在AMD和Intel处理器上Snoop Protocal的复杂度为$O(n)$\cite{intelquickpath}，
 其中$n$为CPU核数。
 当系统中CPU核数增加，各个核上的内存请求将被串行化，这可能会成为操作系统的瓶颈；
 \item 通过锁操作控制共享数据访问。为了保证内核中数据结构的一致性，内核需要使用不同粒度的锁保护关键代码段；
@@ -210,9 +210,9 @@ handler）的处理例程。
 符合Posix标准的操作系统内核中，虚拟内存管理子系统包含多个重要系统调用，且每个系统调用又包括复杂的参数。本毕设只针对一个简化的Posix接口建模：
 
 \begin{itemize}
-	\item void* mmap(addr, canwrite, fixed) \\
+	\item void* mmap(pid, addr, canwrite, fixed) \\
 		建立虚拟地址映射，只对匿名页映射做建模，支持Posix中的PROT\_WRITE和PROT\_READ标志，和MAP\_FIXED位。由于符号执行引擎的限制，假定每次调用只映射一个页大小的虚拟地址；
-	\item void munmap(addr) \\
+	\item void munmap(pid, addr) \\
 		删除一个页大小的虚拟地址映射，基本符合Posix标准
 \end{itemize}
 
