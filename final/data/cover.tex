@@ -78,10 +78,10 @@ System}
 
 \begin{eabstract} 
 	
-	As the development of microelectronic technology, multicore scalability on hardware systems has become a big challenge to the operating system developers.  designing new mechanism to improve the multicore scalability is an attractive topic in both industry and academia.
+	As the development of microelectronic technology, multicore scalability on hardware systems has become a big challenge to the operating system developers.  Designing new mechanism to improve the multicore scalability is an attractive topic in both industry and academia.
 	This paper analyzes the scalability bottleneck in the virtual memory subsystem of Linux, and research into several optimization technology on multicore 
 	systems, such as RadixVM from MIT. Based on these technologies, we propose a modeling method for reference counter and
-	virtual memory subsystem conforming to a simplified Posix specification.  Furthermore, we combine KLEE symbolic execution engine and the commutativity rule 
+	virtual memory subsystem conforming to a simplified Posix specification.  Furthermore, we combine KLEE symbolic execution engine and the commutability rule 
 	to prove the existence of multicore scalable implementations of system interfaces. Based on the theory, we develop a modern operating system kernel ucore-mp on
 	AMD64 NUMA multicore  architecture. Finally, a QEMU-based full system profiler QProf is developed to find potential performance problems in the kernel. An Experimental evaluation shows s performance improvements of 73\% or more with ucore-mp reference counter implementation, compared to atomic operations.
 \end{eabstract}
