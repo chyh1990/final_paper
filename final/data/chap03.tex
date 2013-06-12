@@ -121,6 +121,10 @@ struct inode {
 考虑计数器加一和减一操作，使用C编写对应的模型：
 
 \begin{lstlisting}
+struct state{    
+        int c;   
+        int free;
+}; 
 void counter_add(struct state *counter)
 {
         counter->c ++;
