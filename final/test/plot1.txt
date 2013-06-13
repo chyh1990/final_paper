@@ -3,3 +3,10 @@ gnuplot> set ylabel "mmap throughput"
 gnuplot> plot  "mmap.data" u 1:($3/$2) w linespoints
 gnuplot> plot  "mmap.data" u 1:($3/$2) title "Linux 3.2.0" w linespoints 
 
+
+plot "qprof.data" using 1:xtic(7) with points 
+set xtics rotate by -45
+set style fill solid 1.0 border -1
+gnuplot> plot "qprof.data" using 1:xtic(7) title "qprof-output" with boxes
+gnuplot> set ylabel "Time/%"
+gnuplot> plot "qprof.data" using 1:xtic(7) title "qprof-output" with boxes

@@ -183,28 +183,15 @@ gprof obj/kernel/kernel-amd64.elf kgmon.out
 \end{enumerate}
 
 	例如，本毕设使用QProf寻找uCore中readdir系统调用运行缓慢的原因。在uCore上多次运行使用
-	\emph{ls}命令列出目录，并使用QProf记录系统性能信息：
-	{\tiny
-	\begin{Verbatim}[frame=single]
-Flat profile:
-
-Each sample counts as 0.01 seconds.
-  %   cumulative   self              self     total
- time   seconds   seconds    calls  ms/call  ms/call  name
- 25.62      0.52     0.52     8654     0.06     0.06  ide_wait_ready
-  8.87      0.70     0.18      960     0.19     0.75  ide_read_secs
-  8.37      0.87     0.17                             do_halt
-  4.43      0.96     0.09     1195     0.08     0.08  memmove
-  4.19      1.05     0.09   135219     0.00     0.00  get_pte
-  2.96      1.11     0.06     7908     0.01     0.01  serial_putc_sub
-  2.71      1.16     0.06   135268     0.00     0.00  get_pmd
-  1.97      1.20     0.04   433010     0.00     0.00  ptep_present
-  1.97      1.24     0.04      673     0.06     0.06  memset
-	\end{Verbatim}
-	}
+	\emph{ls}命令列出目录，并使用QProf记录系统性能信息并作图，如图\ref{fig:qprof-output}所示。
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.85\textwidth]{figures/qprof-output.pdf}
+  \caption{QProf记录系统性能}
+  \label{fig:qprof-output}
+\end{figure}
 
 	通过QProf也可以获得内核的函数调用图：
-
 	{\tiny
 	\begin{Verbatim}[frame=single]
 granularity: each sample hit covers 2 byte(s) for 0.49% of 2.03 seconds

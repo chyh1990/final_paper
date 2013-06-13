@@ -1,0 +1,20 @@
+#Flat profile:
+#
+#Each sample counts as 0.01 seconds.
+#  %   cumulative   self              self     total           
+# time   seconds   seconds    calls  ms/call  ms/call  name    
+ 26.80      0.93     0.93    17474     0.05     0.05  ide_wait_ready
+ 15.27      1.46     0.53     1940     0.27     0.76  ide_read_secs
+  5.76      1.66     0.20     2341     0.09     0.09  memmove
+  5.48      1.85     0.19        ?        ?        ?  do_halt
+  2.88      1.95     0.10   458898     0.00     0.00  ptep_present
+  2.02      2.02     0.07   137705     0.00     0.00  get_pud
+  2.02      2.09     0.07     1044     0.07     0.07  memset
+  1.44      2.14     0.05   137705     0.00     0.00  get_pgd
+  1.44      2.19     0.05    34747     0.00     0.00  pa2page
+  1.44      2.24     0.05    11607     0.00     0.00  serial_putc_sub
+  1.15      2.28     0.04        ?        ?        ?  __trapret
+  0.86      2.31     0.03        1    30.00    39.40  buddy_init_memmap
+  0.86      2.34     0.03        ?        ?        ?  ptep_invalid
+  0.86      2.37     0.03   137628     0.00     0.00  get_pmd
+  0.86      2.40     0.03    17415     0.00     0.00  kmem_cache_alloc
