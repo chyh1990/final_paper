@@ -17,11 +17,11 @@ C两种标准C库有较为完整的支持。但一直以来此内核都缺少对
 
 \tikzstyle{wmod} = [mod, text width=9cm, minimum height=1.7em]
 \begin{tikzpicture}[node distance=0.7cm]
-    \node (qe) [wmod] {System Interface};
+    \node (qe) [wmod] {系统调用接口};
     \matrix (mm) [below=0.5em of qe,column sep=0.1cm]{
     \node (mydb) [mod] {\begin{tabular}{c}
-	    Memory \\
-	    Management\\
+	    内存管理 \\
+	    子系统\\
     \end{tabular}}; &
     \node (idxdbs) [mod] {
 	    \begin{tabular}{c}
@@ -30,18 +30,19 @@ C两种标准C库有较为完整的支持。但一直以来此内核都缺少对
 	    \end{tabular}
     }; &
     \node (idxdbi) [mod] {\begin{tabular}{c}
-	    Device \\
-	    Management \\
+	    设备管理\\
+	    子系统\\
     \end{tabular}}; &&
     \node (idxdbp) [mod] {\begin{tabular}{c}
-    Process \\
-    Threads \\
+    进程\\
+    线程\\
     \end{tabular}
     }; \\
     };
-    \node (sapi) [wmod, below=0.5em of mm]  {Hardware Abstract Layer};
-    \node (hw) [wmod, below=0.5em of sapi, fill=red!20]  {Hardware};
-    \node [below=0.8em of hw]  (SYS) {uCore kenrel space};
+    \node (sapi) [wmod, below=0.5em of mm]  {硬件抽象层};
+    \node (hw) [wmod, below=0.5em of sapi, fill=red!20]
+    {硬件平台（x86/ARM/MIPS及其他)};
+    \node [below=0.8em of hw]  (SYS) {uCore内核空间};
     \begin{pgfonlayer}{background}
         % Compute a few helper coordinates
         \path (mydb.west |- qe.north)+(-0.5,0.3) node (a) {};
@@ -320,12 +321,12 @@ uCore中实现了无锁堆栈，可以用在Slab分配器中可以管理空闲�
 \begin{Code}
 	\centering
 \begin{lstlisting}
-struct lockfree_stack_entry{
-	volatile struct lockfree_stack_entry *link;
+struct lf_stack_entry{
+	volatile struct lf_stack_entry *link;
 };
 
-struct lockfree_stack{
-	volatile struct lockfree_stack_entry *top;
+struct lf_stack{
+	volatile struct lf_stack_entry *top;
 	/* avoid ABA problem */
 	unsigned long volatile oc;
 	atomic_t count;
@@ -333,7 +334,7 @@ struct lockfree_stack{
 \end{lstlisting}
 
 \end{Code}
-为了实现push和pop操作需要使用CAS指令切换栈顶指针（lockfree\_stack中的top指针）。实现无锁数据结构的一个常见问题是所谓ABA问题\cite{Fraser:2007:CPW:1233307.1233309}。对于无锁栈，为解决ABA问题的方法使用了堆栈修改计数器oc，并在pop堆栈项操作中，修改栈顶的同时修改计数器oc（这在AMD64上使用16字节CAS指令完成）。使用这种方法，pop函数可以通过跟踪lockfree\_stack结构中top指针的``版本号''，避免ABA问题。
+为了实现push和pop操作需要使用CAS指令切换栈顶指针（lf\_stack中的top指针）。实现无锁数据结构的一个常见问题是所谓ABA问题\cite{Fraser:2007:CPW:1233307.1233309}。对于无锁栈，为解决ABA问题的方法使用了堆栈修改计数器oc，并在pop堆栈项操作中，修改栈顶的同时修改计数器oc（这在AMD64上使用16字节CAS指令完成）。使用这种方法，pop函数可以通过跟踪lockfree\_stack结构中top指针的``版本号''，避免ABA问题。
 
 \subsection{支持NUMA的物理页分配器}
 为了高效支持对NUMA架构，uCore中实现了一个基于非连续内存模型多核物理页分配器。此物理页分配器包括以下几个组成部分：

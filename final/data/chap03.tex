@@ -34,30 +34,8 @@ up_write(&mm->mmap_sem);
 \end{lstlisting}
 
 如上面代码所示，Linux中对同一进程的mmap调用都加上了锁，实际上串行化了所有虚拟内存分配操作，这可能成为频繁调用这两个系统调用分配和释放内存的
-多线程应用的瓶颈。事实上，现在Linux中对两个系统调用的实现完全不具有多核可扩展性。事实上，我们可以使用一个简单的程序来验证Linux中mmap系统调用的可扩展性问题：
-
-\begin{lstlisting}
-static void *  thread_mmap(void *arg){
-	int id = (int)arg, i;
-	for(i=0;i<COUNT;i++){
-		int l = 4096 * (rand() % 5 + 1);
-		void *t = mmap(NULL, l, PROT_WRITE|PROT_READ,
-			MAP_PRIVATE|MAP_ANON, -1, 0);
-		assert(t != MAP_FAILED);
-	}
-	return NULL;
-}
-int main(int argc, const char* argv[]) {
-	/* ... */
-	for(i=0;i<threads;i++)
-		pthread_create(th+i, NULL, thread_mmap, (void*)i);
-	for(i=0;i<threads;i++)
-		pthread_join(th[i], (void**)&res);
-	/* ... */
-}
-\end{lstlisting}
-
-在上面的程序中，我们使用微测试例程来模拟Java虚拟机垃圾回收器的内存分配行为，这将对内核虚拟内存子系统产生较高并发压力。此程序在多个线程中用mmap系统调用多次向操作系统申请空闲的虚拟地址空间。
+多线程应用的瓶颈。事实上，现在Linux中对两个系统调用的实现完全不具有多核可扩展性。事实上，我们可以使用一个简单的程序来验证Linux中mmap系统调用的可扩展性问题。
+在测试程序中，使用微测试例程来模拟Java虚拟机垃圾回收器的内存分配行为，这将对内核虚拟内存子系统产生较高并发压力。此程序在多个线程中用mmap系统调用多次向操作系统申请空闲的虚拟地址空间。
 
 \begin{figure}[ht]
 \begin{center}
@@ -306,8 +284,7 @@ Logic的一种扩展，理论上可以用于对使用共享可变数据结构（
 形式上Separation Logic定义了Separating Conjuction运算符：P *
 Q，表示程序的堆（Heap）可分割为两个独立的堆H1、H2，在H1上命题P成立，在H2上命题Q成立。直观上，通过Seperating
 conjuction运算符和相关推理规则，简化了Heap上包含共享数据结构程序约束的描述。然而，文章\cite{Reynolds:2002:SLL:645683.664578}中并未给出Separation
-logic的判定过程(decision
-procedure)，Z3等SMT求解器未支持此类逻辑的可满足性判定。但是，对于separation
+logic的判定过程，Z3等SMT求解器未支持此类逻辑的可满足性判定。但是，对于separation
 logic的一些特殊情况，学界已经提出了相关的判定过程。例如，对于操作系统中的使用最频繁的链表结构，文章\cite{seplogic:theorem}提出了求解以下蕴含式的算法：
 
 \begin{equation}
